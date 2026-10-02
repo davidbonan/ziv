@@ -1,0 +1,39 @@
+[package]
+name = "ziv"
+version = "0.1.0"
+edition = "2024"
+description = "Lightweight Lightroom-like RAW photo editor"
+authors = ["David Bonan"]
+publish = false
+
+[[bin]]
+name = "ziv"
+path = "src/main.rs"
+
+[dependencies]
+# No accesskit: on macOS the first AX query makes egui rebuild the full
+# accessibility tree every frame for the life of the process.
+eframe = { version = "0.36", default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+] }
+egui = "0.36"
+
+[features]
+# Whole-app capture (Harness::new_eframe + wgpu PNG); enabled only by the headless-verify skill.
+headless-verify = ["egui_kittest/eframe", "egui_kittest/wgpu"]
+
+[dev-dependencies]
+egui_kittest = "0.36"
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# Image math and egui are unusable unoptimised; ziv's own code stays debuggable.
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,42 @@
+# ziv
+
+Lightweight Lightroom-like **RAW photo editor**, native **macOS (Apple Silicon first)**, in **Rust**.
+UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
+**lib + bin**: `src/lib.rs` (testable modules) + `src/main.rs` (thin `eframe` wrapper).
+
+## Documentation
+- `specs/overview.md` — goal, feature set, locked and open decisions, specs index.
+- `specs/architecture.md` — modules, folder rule, engine/UI boundary, threads.
+- `specs/testing.md` — feedback loop: unit / business e2e / golden image / UI e2e.
+- `specs/adr/` — one file per technical decision (`/adr`).
+- `specs/<feature>.md` — product intent per feature (`/spec`).
+
+## Implementation tracking — `specs/plan/`
+**At the start of a dev session, read `specs/plan/STATE.md`.** Conventions and
+*Definition of Done*: `specs/plan/README.md`. After each task, update `STATE.md`
+(status only); the "why" lives in commit messages.
+
+## Skills
+- `/spec <feature>` — frame a feature into `specs/<feature>.md` + task cards in `STATE.md`. No code.
+- `/adr <decision>` — record a technical decision in `specs/adr/`.
+- `/implement-state [task]` — implement exactly one task from `STATE.md` through the DoD.
+- `/verify` — quality gate: fmt, clippy `-D warnings`, tests.
+- `/headless-verify [instructions]` — open the real app headless, drive it, PNG + a11y evidence.
+- `image-pipeline` — reference: pipeline invariants, how to add an adjustment. Read before touching `engine`.
+
+## Commands
+```sh
+cargo run                                  # launch the app
+cargo test                                 # unit + business e2e + UI e2e
+cargo test --lib                           # unit only
+cargo test --test it <module>              # one integration module
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+```
+
+## Rules
+- Domain isolated from rendering: image math, edit model, RAW decoding never import `egui`/`eframe`.
+- Rendering = `pub fn(&mut egui::Ui, …)` functions, drivable by `egui_kittest`.
+- The engine renders without a window; the viewport only displays its output.
+- A locked decision (`specs/overview.md`) changes only through a new ADR.
+- No speculative abstraction; single crate until a real need forces a workspace.

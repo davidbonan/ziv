@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+.DS_Store
+# headless-verify skill: evidence and throwaway harnesses
+/verify-artifacts
+tests/headless_verify_scratch_*.rs
+.claude/settings.local.json
