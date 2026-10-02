@@ -1,0 +1,8 @@
+pub mod camera_calibration;
+pub mod decode_error;
+pub mod decoded_photo;
+pub mod orientation;
+pub mod photo_kind;
+pub mod photo_name;
+pub mod thumbnail;
+pub mod working_image;

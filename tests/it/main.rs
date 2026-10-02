@@ -1,3 +1,31 @@
 //! Single integration-test binary: every `tests/it/*.rs` is a module here so `cargo test` links once.
 
+mod develop_golden;
+mod display_golden;
+mod enhance_e2e;
+mod enhancement_file_e2e;
+mod enhancement_render;
+mod export_e2e;
+mod golden;
+mod gpu;
+mod photo_enhancement_e2e;
+mod photo_files_e2e;
+mod raw_e2e;
+mod render_pixels;
+mod sidecar_e2e;
+mod standard_image_e2e;
+mod synthetic;
+mod themed;
+mod thumbnail_e2e;
+mod ui_adjustment_slider;
+mod ui_detail_section;
+mod ui_develop_panel;
 mod ui_empty_state;
+mod ui_export_dialog;
+mod ui_filmstrip;
+mod ui_mask_canvas;
+mod ui_masks;
+mod ui_people_picker;
+mod ui_photo_status;
+mod ui_photo_viewport;
+mod zones_e2e;

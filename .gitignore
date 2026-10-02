@@ -5,3 +5,5 @@
 /verify-artifacts
 tests/headless_verify_scratch_*.rs
 .claude/settings.local.json
+# not redistributable: personal RAW files
+/tests/fixtures/local

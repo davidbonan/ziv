@@ -61,7 +61,8 @@ fn headless_verify() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .with_os(egui::os::OperatingSystem::Mac)
-        .build_eframe(|_cc| ZivApp);
+        .wgpu()
+        .build_eframe(|cc| ZivApp::new(cc));
     harness.run();
 
     let tree = format!("{:#?}", harness.root());
@@ -98,11 +99,23 @@ Never a glob. Never delete `verify-artifacts/`.
 PASS / FAIL · what was verified · PNG paths · relevant a11y excerpt · panic message if any.
 
 ## Seeding state
-`ZivApp` starts with an empty library. Native dialogs (file picker) hang a
-headless run: never drive them. State is injected through a constructor seam on
-`ZivApp`, fed by a throwaway fixture (`tempfile` + files from `tests/fixtures/`).
-The seam does not exist yet — it is added by the first task that needs a loaded
-photo; document it here when it lands.
+`ZivApp::new(cc)` starts with an empty library. Native dialogs (file picker) hang
+a headless run: never drive them. State is injected through a constructor seam:
+
+- `ZivApp::opening(cc, &paths)` — the app as if the user had opened those files
+  or folders (`tests/fixtures/…`, `tests/fixtures/local/DSC07070.ARW` when
+  present). A drop is injected with `harness.input_mut().dropped_files.push(…)`
+  (an `Arc` of a small `egui::DroppedFile` impl), then `harness.step()`. Loading is asynchronous:
+  the first frame shows `Loading <name>…`; `harness.step()` in a loop, with a
+  deadline, until the label `Photo` appears. `harness.run()` panics while the
+  spinner is on screen (it repaints forever).
+
+- `.exporting_to(folder)` chained on it — as if the export destination had
+  already been chosen (the folder picker cannot be driven). Export settings are
+  not persisted in a headless run: there is no eframe storage.
+
+`.wgpu()` on the builder is required: `ZivApp` takes its device from
+`cc.wgpu_render_state`, which the default lazy renderer does not provide.
 
 ## What this proves about pixels
 The capture shows the photo viewport as the engine rendered it, so a visual
@@ -112,7 +125,7 @@ output is asserted by golden tests (`specs/testing.md` §5).
 ## egui_kittest cheatsheet (0.36)
 | Need | Call |
 |---|---|
-| Whole app | `Harness::builder().with_size(..).with_os(Mac).build_eframe(\|_cc\| ZivApp)` |
+| Whole app | `Harness::builder().with_size(..).with_os(Mac).wgpu().build_eframe(\|cc\| ZivApp::new(cc))` |
 | Component | `Harness::new_ui(\|ui\| component(ui, …))` |
 | Component + state | `Harness::new_ui_state(\|ui, state\| …, state)` |
 | Advance a frame | `harness.run()` |

@@ -1,0 +1,10 @@
+pub mod class_shares;
+pub mod coverage_canvas;
+pub mod matte;
+pub mod matte_refinement;
+pub mod model_input;
+pub mod people_pick;
+pub mod person_parts;
+pub mod persons;
+pub mod photo_view;
+pub mod zone_models;

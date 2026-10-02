@@ -1,2 +1,12 @@
 pub mod app;
+pub mod color;
+pub mod design;
+pub mod develop;
+pub mod engine;
+pub mod enhance;
+pub mod export;
 pub mod library;
+pub mod models;
+pub mod photo;
+pub mod viewport;
+pub mod zones;

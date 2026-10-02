@@ -28,13 +28,66 @@ src/<module>/<part>/{domain,application,infrastructure,ui}/
 src/main.rs                      eframe wrapper
 src/lib.rs                       module declarations
 src/app.rs                       ZivApp, run()
-src/library/ui/empty_state.rs    empty library screen
+src/design/ui/                   theme (colors, spacing, type), AdjustmentSlider, icon button, floating pill, Notice
+src/color/domain/                primaries, matrices, sRGB transfer, working space, Illuminant
+src/photo/application/           PhotoLoader (worker thread)
+src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, Thumbnail, Orientation, CameraCalibration, DecodeError
+src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`)
+src/develop/application/         SessionEdits: edits of the session, stored as they settle
+src/develop/infrastructure/      SidecarFiles: one JSON file next to each edited photo
+src/develop/domain/              Edit (Adjustments + masks), EditHistory, CopiedEdit, WhiteBalance, Tone, Presence, BaseRendering, Development;
+                                 Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay
+src/develop/ui/                  develop panel, masks section, mask canvas (drawing and handles over the photo), Before badge
+src/export/domain/               ExportSettings: format, size, destination, file naming
+src/export/application/          ExportRun: several photos exported in the background
+src/export/infrastructure/       one photo → file (`image` encoders), destination picker
+src/export/ui/                   export dialog, progress, summary
+src/engine/infrastructure/       Engine: upload + mipmaps, display stage (WGSL: enhancement mix, adjustments, masks, overlay), mask coverage layers, readback, render to pixels
+src/enhance/domain/              Enhancement (differences from the original), ModelEncoding, noise level, overlapping tiles, unsharp mask, the enhancement model; port: EnhancementStorage
+src/enhance/application/         Enhancer: photo → enhancement, tile by tile; EnhancementRun (worker thread, Cancel)
+src/enhance/infrastructure/      EnhancementFiles: one file next to each enhanced photo; photo → enhancement file; upload with enhancement
+src/enhance/ui/                  Detail section (Enhance, Intensity), enhancement progress
+src/viewport/domain/             View: fit, zoom, pan → Placement
+src/viewport/infrastructure/     PhotoPresenter: engine output → egui texture
+src/viewport/ui/                 photo_viewport, loading / failed status
+src/library/domain/              Session, natural order
+src/library/infrastructure/      photo files among opened paths, native picker
+src/library/ui/                  empty state, filmstrip
+src/models/domain/               Model (its files: address, checksum, size); ports: ModelSource, ModelRunner
+src/models/application/          ModelStore: download at first use, checked, kept
+src/models/infrastructure/       HTTPS downloads, models folder, ONNX Runtime runner (`ort`): CPU, or GPU for a model of fixed shape
+src/zones/domain/                the zone models, model input, mattes and their refinement on the photo's outlines,
+                                 persons and their parts, PeoplePick; port: PhotoView
+src/zones/application/           ZoneDetector: photo → zone masks, persons, person parts; DetectionRun (worker thread)
+src/zones/ui/                    detection status and its messages, people picker and person outlines
+src/zones/infrastructure/        photo view rendered by the engine
+assets/fonts/                    IBM Plex Sans (OFL), embedded in the binary
 tests/it/main.rs                 single integration binary
-tests/it/ui_empty_state.rs       UI e2e
+tests/it/ui_*.rs                 UI e2e
+tests/it/gpu.rs, golden.rs       headless engine, golden compare
+tests/fixtures/, tests/golden/   input files, reference renders
 ```
 
 Modules are added by the milestone that needs them, not ahead of it.
 
 ## 4. Threads
-Not designed yet. Constraint already known: RAW decoding and AI inference never
-run on the UI thread. To be specified with M1.
+- **UI thread**: egui frames, engine renders at screen resolution, nothing else.
+- **Viewed-photo loader** (`PhotoLoader`, one worker, `Backlog::LoadNewestOnly`):
+  decodes a file and uploads it to the GPU (`Engine::upload`; `wgpu::Device` and
+  `Queue` are shared across threads). Requests made obsolete while it was busy
+  are skipped, so fast navigation decodes only where the user stopped.
+- **Thumbnail loader** (`PhotoLoader`, one worker, `Backlog::LoadAll`): one
+  thumbnail per photo of the session, in order; replaced by a new one when
+  another session is opened.
+- **Export worker** (`ExportRun`, one thread per export): decodes, uploads,
+  renders (`Engine::render_pixels`, strip by strip), encodes and writes each
+  photo. Display-stage renders are serialized by a lock: their uniforms are shared.
+- Each result wakes the UI with `request_repaint`. A decoder panic fails that
+  photo only.
+- **Zone detection** (`DetectionRun`, one thread per detection): renders the
+  photo for the model, downloads the model when missing, runs it on the CPU.
+  Viewing another photo abandons it; the models are unloaded when it ends.
+- **Enhancement** (`EnhancementRun`, one at a time): decodes the photo, runs the
+  model tile by tile on the GPU, writes the enhancement file, uploads the result
+  onto the photo on screen. It goes on while other photos are viewed; Cancel
+  stops it at the next tile.

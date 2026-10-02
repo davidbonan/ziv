@@ -7,7 +7,13 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 ## Documentation
 - `specs/overview.md` — goal, feature set, locked and open decisions, specs index.
 - `specs/architecture.md` — modules, folder rule, engine/UI boundary, threads.
+- `specs/export.md` — export to JPEG / PNG (M3).
+- `specs/local-adjustments.md` — masks and their adjustments (M4).
+- `specs/zone-masks.md` — masks detected by models: subject, sky, persons (M5).
+- `specs/enhance.md` — noise removed and detail strengthened by a model (M6).
 - `specs/testing.md` — feedback loop: unit / business e2e / golden image / UI e2e.
+- `specs/import.md` — F1: opening photos, filmstrip, viewport zoom and pan.
+- `specs/develop.md` — F2: develop panel, base rendering, sidecar, undo, before/after.
 - `specs/adr/` — one file per technical decision (`/adr`).
 - `specs/<feature>.md` — product intent per feature (`/spec`).
 
