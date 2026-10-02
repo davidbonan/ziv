@@ -19,6 +19,8 @@ pub struct PhotoViewportOutput {
     pub photo_rect: Rect,
     /// Where the whole photo lies, the part scrolled out of sight included.
     pub whole_photo_rect: Rect,
+    /// Screen pixels per photo pixel.
+    pub scale: f32,
 }
 
 /// Shows the photo through `view` and applies zoom and pan gestures to it.
@@ -93,5 +95,6 @@ pub fn photo_viewport(
         view,
         photo_rect,
         whole_photo_rect,
+        scale: placement.scale,
     }
 }

@@ -1,19 +1,20 @@
 use std::ops::RangeInclusive;
 
 use egui::{
-    Align, Align2, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, TextEdit, WidgetInfo, pos2,
-    vec2,
+    Align, Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, TextEdit, WidgetInfo,
+    pos2, vec2,
 };
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
 
-use super::theme::{CONTROL_RADIUS, color, regular, space, type_size};
+use super::theme::{CONTROL_RADIUS, color, hue, regular, space, type_size};
 
 const NAME_LINE_HEIGHT: f32 = 18.0;
 const TRACK_LINE_HEIGHT: f32 = 16.0;
 const VALUE_WIDTH: f32 = 56.0;
 const TRACK_THICKNESS: f32 = 2.0;
+const HUE_TRACK_THICKNESS: f32 = 4.0;
 const DEFAULT_TICK_HEIGHT: f32 = 7.0;
 const HANDLE_RADIUS: f32 = 5.0;
 const HANDLE_RADIUS_ENGAGED: f32 = 6.5;
@@ -44,6 +45,15 @@ impl TrackScale {
     }
 }
 
+/// What the track of a slider is painted with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Track {
+    /// Grey, filled with the accent from the default to the value.
+    AccentFill,
+    /// From one hue to the other through neutral: where each end takes the photo.
+    Hues { start: Color32, end: Color32 },
+}
+
 pub struct AdjustmentSlider {
     pub label: &'static str,
     pub range: RangeInclusive<f32>,
@@ -51,6 +61,7 @@ pub struct AdjustmentSlider {
     pub step: f32,
     pub decimals: usize,
     pub scale: TrackScale,
+    pub track: Track,
 }
 
 pub fn value_field_label(label: &str) -> String {
@@ -62,6 +73,21 @@ fn select_all(context: &egui::Context, editor: egui::Id, text: &str) {
     let everything = CCursorRange::two(CCursor::new(0), CCursor::new(text.chars().count()));
     state.cursor.set_char_range(Some(everything));
     state.store(context, editor);
+}
+
+/// A band going from the first color to the last through the middle one.
+fn paint_hues(painter: &egui::Painter, band: Rect, colors: [Color32; 3]) {
+    let mut mesh = egui::Mesh::default();
+    let stops = [band.left(), band.center().x, band.right()];
+    for (x, color) in stops.into_iter().zip(colors) {
+        mesh.colored_vertex(pos2(x, band.top()), color);
+        mesh.colored_vertex(pos2(x, band.bottom()), color);
+    }
+    for stop in [0, 2] {
+        mesh.add_triangle(stop, stop + 1, stop + 2);
+        mesh.add_triangle(stop + 1, stop + 2, stop + 3);
+    }
+    painter.add(mesh);
 }
 
 struct Shown {
@@ -294,13 +320,22 @@ impl AdjustmentSlider {
         };
         let (start_x, end_x) = (x_of(*self.range.start()), x_of(*self.range.end()));
         let (default_x, handle_x) = (x_of(self.default), x_of(shown.value));
-        painter.rect_filled(segment(start_x, end_x), TRACK_THICKNESS / 2.0, color::TRACK);
         if default_x > start_x && default_x < end_x {
             let tick =
                 Rect::from_center_size(pos2(default_x, center_y), vec2(1.0, DEFAULT_TICK_HEIGHT));
             painter.rect_filled(tick, 0.0, color::TRACK);
         }
-        if shown.is_changed && shown.enabled {
+        match self.track {
+            Track::Hues { start, end } if shown.enabled => {
+                let grow = (HUE_TRACK_THICKNESS - TRACK_THICKNESS) / 2.0;
+                let band = segment(start_x, end_x).expand2(vec2(0.0, grow));
+                paint_hues(painter, band, [start, hue::NEUTRAL, end]);
+            }
+            _ => {
+                painter.rect_filled(segment(start_x, end_x), TRACK_THICKNESS / 2.0, color::TRACK);
+            }
+        }
+        if shown.is_changed && shown.enabled && self.track == Track::AccentFill {
             painter.rect_filled(
                 segment(default_x, handle_x),
                 TRACK_THICKNESS / 2.0,
@@ -359,6 +394,7 @@ mod tests {
         step: 0.1,
         decimals: 2,
         scale: TrackScale::Linear,
+        track: Track::AccentFill,
     };
     const TEMPERATURE: AdjustmentSlider = AdjustmentSlider {
         label: "Temp",
@@ -367,6 +403,7 @@ mod tests {
         step: 50.0,
         decimals: 0,
         scale: TrackScale::Reciprocal,
+        track: Track::AccentFill,
     };
 
     #[test]

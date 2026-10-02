@@ -10,23 +10,25 @@ use egui::text::{LayoutJob, TextWrapping};
 use crate::design::ui::theme::{CONTROL_RADIUS, color, regular, space, type_size};
 use crate::photo::domain::photo_name::photo_name;
 
-use super::empty_state::OPEN_BUTTON_LABEL;
-
-pub const EXPORT_BUTTON_LABEL: &str = "Export…";
 pub const FILMSTRIP_HEIGHT: f32 = 96.0;
 const CELL_SIZE: Vec2 = vec2(108.0, 72.0);
 const SELECTION_STROKE_WIDTH: f32 = 2.0;
 const NAME_MARGIN: f32 = 6.0;
+const EDITED_MARKER_RADIUS: f32 = 2.5;
+const EDITED_MARKER_INSET: f32 = 8.0;
 
 pub enum ThumbnailState {
     Loading,
     Ready(egui::TextureHandle),
     Failed,
+    /// The file is no longer where the series has it.
+    NotFound,
 }
 
 pub struct FilmstripPhoto<'a> {
     pub path: &'a Path,
     pub thumbnail: &'a ThumbnailState,
+    pub is_edited: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,18 +36,37 @@ pub enum FilmstripIntent {
     Select(usize),
     SelectPrevious,
     SelectNext,
-    Open,
-    Export,
 }
 
 /// What assistive technology and tests read for a thumbnail.
-pub fn thumbnail_label(path: &Path, thumbnail: &ThumbnailState) -> String {
-    let name = photo_name(path);
-    match thumbnail {
-        ThumbnailState::Loading => format!("{name}, loading"),
-        ThumbnailState::Ready(_) => name,
-        ThumbnailState::Failed => format!("{name}, could not be opened"),
+pub fn thumbnail_label(photo: &FilmstripPhoto<'_>) -> String {
+    let name = photo_name(photo.path);
+    let state = match photo.thumbnail {
+        ThumbnailState::Loading => ", loading",
+        ThumbnailState::Ready(_) => "",
+        ThumbnailState::Failed => ", could not be opened",
+        ThumbnailState::NotFound => ", not found",
+    };
+    let edited = match photo.is_edited {
+        true => ", edited",
+        false => "",
+    };
+    format!("{name}{state}{edited}")
+}
+
+/// Where the selected photo is in the series: "3 / 148".
+pub fn position_label(selected: Option<usize>, count: usize) -> String {
+    match selected {
+        Some(index) => format!("{} / {count}", index + 1),
+        None => count.to_string(),
     }
+}
+
+// Ringed in the dark: it stays visible on a bright picture.
+fn paint_edited_marker(painter: &egui::Painter, cell: Rect) {
+    let centre = cell.right_bottom() - vec2(EDITED_MARKER_INSET, EDITED_MARKER_INSET);
+    painter.circle_filled(centre, EDITED_MARKER_RADIUS + 1.5, color::CANVAS);
+    painter.circle_filled(centre, EDITED_MARKER_RADIUS, color::ACCENT);
 }
 
 fn largest_rect_with_aspect(inside: Rect, aspect: f32) -> Rect {
@@ -72,7 +93,7 @@ fn thumbnail_cell(
 ) -> egui::Response {
     let (cell, response) = ui.allocate_exact_size(CELL_SIZE, Sense::click());
     response.widget_info(|| {
-        let label = thumbnail_label(photo.path, photo.thumbnail);
+        let label = thumbnail_label(photo);
         WidgetInfo::selected(WidgetType::SelectableLabel, true, is_selected, label)
     });
 
@@ -89,7 +110,12 @@ fn thumbnail_cell(
             let outline = Stroke::new(1.0, color::PICTURE_OUTLINE);
             painter.rect_stroke(picture, 0.0, outline, StrokeKind::Inside);
         }
-        ThumbnailState::Failed => paint_name(ui, cell, photo_name(photo.path), color::DANGER),
+        ThumbnailState::Failed | ThumbnailState::NotFound => {
+            paint_name(ui, cell, photo_name(photo.path), color::DANGER)
+        }
+    }
+    if photo.is_edited {
+        paint_edited_marker(painter, cell);
     }
     if is_selected {
         let stroke = Stroke::new(SELECTION_STROKE_WIDTH, color::ACCENT);
@@ -138,12 +164,10 @@ pub fn filmstrip(
     let mut intent = arrow_key_intent(ui);
 
     ui.horizontal_centered(|ui| {
-        if ui.button(OPEN_BUTTON_LABEL).clicked() {
-            intent = Some(FilmstripIntent::Open);
-        }
-        if ui.button(EXPORT_BUTTON_LABEL).clicked() {
-            intent = Some(FilmstripIntent::Export);
-        }
+        let position = egui::RichText::new(position_label(selected, photos.len()))
+            .font(regular(type_size::CAPTION))
+            .color(color::TEXT_MUTED);
+        ui.label(position);
         egui::ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal_centered(|ui| {
                 let mut selected_cell = None;

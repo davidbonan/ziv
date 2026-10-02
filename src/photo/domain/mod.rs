@@ -4,5 +4,6 @@ pub mod decoded_photo;
 pub mod orientation;
 pub mod photo_kind;
 pub mod photo_name;
+pub mod shooting_data;
 pub mod thumbnail;
 pub mod working_image;

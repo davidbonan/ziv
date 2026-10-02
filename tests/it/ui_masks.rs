@@ -343,3 +343,13 @@ fn zone_tools_wait_for_the_running_detection_and_for_room() {
         assert!(subject_tool.accesskit_node().is_disabled());
     }
 }
+
+#[test]
+fn masks_title_carries_the_number_of_masks() {
+    assert!(panel(two_masks()).query_by_label("Masks (2)").is_some());
+    assert!(
+        panel(with_masks(Vec::new()))
+            .query_by_label("Masks")
+            .is_some()
+    );
+}

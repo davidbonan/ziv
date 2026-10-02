@@ -24,9 +24,22 @@ pub mod color {
     pub const TEXT_DISABLED: Color32 = Color32::from_gray(0x5C);
     /// Darkroom safelight amber: selection, and values away from their default.
     pub const ACCENT: Color32 = Color32::from_rgb(0xF0, 0xA2, 0x3B);
+    /// Text on a surface filled with the accent.
+    pub const ON_ACCENT: Color32 = Color32::from_rgb(0x1B, 0x13, 0x00);
     pub const DANGER: Color32 = Color32::from_rgb(0xE0, 0x70, 0x5A);
     /// Pure white at low opacity: a tinted outline reads as dirt on a picture's edge.
     pub const PICTURE_OUTLINE: Color32 = Color32::from_rgba_premultiplied(26, 26, 26, 26);
+}
+
+/// The ends of the white balance tracks: where each slider takes the photo.
+pub mod hue {
+    use egui::Color32;
+
+    pub const COOL: Color32 = Color32::from_rgb(0x2F, 0x6F, 0xD0);
+    pub const WARM: Color32 = Color32::from_rgb(0xE8, 0x9A, 0x2A);
+    pub const GREEN: Color32 = Color32::from_rgb(0x3F, 0xA8, 0x4A);
+    pub const MAGENTA: Color32 = Color32::from_rgb(0xC9, 0x4F, 0xC0);
+    pub const NEUTRAL: Color32 = Color32::from_gray(0xD4);
 }
 
 pub mod space {

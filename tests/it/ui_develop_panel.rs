@@ -5,9 +5,9 @@ use ziv::color::domain::illuminant::Illuminant;
 use ziv::develop::domain::adjustments::Adjustments;
 use ziv::develop::domain::white_balance::WhiteBalance;
 use ziv::develop::ui::develop_panel::{
-    BEFORE_LABEL, BLACKS_LABEL, CONTRAST_LABEL, DevelopPanelState, EXPOSURE_LABEL,
-    HIGHLIGHTS_LABEL, RESET_LABEL, SATURATION_LABEL, SHADOWS_LABEL, TEMPERATURE_LABEL, TINT_LABEL,
-    VIBRANCE_LABEL, WHITES_LABEL, develop_panel,
+    BLACKS_LABEL, CONTRAST_LABEL, COPY_LABEL, DevelopPanelState, EXPOSURE_LABEL, HIGHLIGHTS_LABEL,
+    PASTE_LABEL, RESET_LABEL, SATURATION_LABEL, SHADOWS_LABEL, TEMPERATURE_LABEL, TINT_LABEL,
+    TONE_GROUP_LABEL, VIBRANCE_LABEL, WHITES_LABEL, develop_panel,
 };
 use ziv::photo::domain::photo_kind::PhotoKind;
 
@@ -263,21 +263,63 @@ fn disabled_panel_shows_the_edit_and_lets_nothing_change() {
     assert_eq!(*harness.state(), edited());
 }
 
+#[derive(Default)]
+struct Asked {
+    is_copy_asked: bool,
+    is_paste_asked: bool,
+}
+
+fn asked_by_clicking(label: &str) -> Asked {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 600.0))
+        .build_ui_state(
+            |ui, asked: &mut Asked| {
+                if !is_themed(ui) {
+                    return;
+                }
+                let shown = DevelopPanelState {
+                    can_paste: true,
+                    ..showing(edited())
+                };
+                let left = develop_panel(ui, &PhotoKind::StandardImage, shown);
+                asked.is_copy_asked |= left.is_copy_asked;
+                asked.is_paste_asked |= left.is_paste_asked;
+            },
+            Asked::default(),
+        );
+    harness.run();
+    harness.get_by_label(label).click();
+    harness.run();
+    std::mem::take(harness.state_mut())
+}
+
 #[test]
-fn before_button_switches_before_on_and_off() {
-    let mut harness = before_harness(showing(edited()));
+fn foot_asks_to_copy_and_to_paste_the_edit() {
+    let copy = asked_by_clicking(COPY_LABEL);
+    assert!(copy.is_copy_asked && !copy.is_paste_asked);
 
-    harness
-        .get_by_role_and_label(Role::Button, BEFORE_LABEL)
-        .click();
-    harness.run();
-    assert!(harness.state().is_before_shown);
+    let paste = asked_by_clicking(PASTE_LABEL);
+    assert!(paste.is_paste_asked && !paste.is_copy_asked);
+}
 
-    harness
-        .get_by_role_and_label(Role::Button, BEFORE_LABEL)
-        .click();
-    harness.run();
-    assert!(!harness.state().is_before_shown);
+#[test]
+fn paste_waits_for_a_copied_edit() {
+    let harness = before_harness(showing(edited()));
+
+    assert!(
+        harness
+            .get_by_label(PASTE_LABEL)
+            .accesskit_node()
+            .is_disabled()
+    );
+}
+
+#[test]
+fn foot_stays_at_the_bottom_of_the_panel() {
+    let harness = before_harness(showing(edited()));
+
+    let reset = harness.get_by_label(RESET_LABEL).rect();
+    assert!(reset.bottom() > 560.0, "{reset:?}");
 }
 
 #[test]
@@ -296,4 +338,19 @@ fn changing_an_adjustment_leaves_before() {
 
     assert!(!harness.state().is_before_shown);
     assert_eq!(harness.state().edit.adjustments.contrast, 21.0);
+}
+
+#[test]
+fn section_folds_and_unfolds_by_its_title_and_keeps_its_values() {
+    let mut harness = panel_harness(edited());
+
+    harness.get_by_label(TONE_GROUP_LABEL).click();
+    harness.run();
+    assert!(harness.query_by_label(EXPOSURE_LABEL).is_none());
+    assert!(harness.query_by_label(VIBRANCE_LABEL).is_some());
+    assert_eq!(*harness.state(), edited());
+
+    harness.get_by_label(TONE_GROUP_LABEL).click();
+    harness.run();
+    assert!(harness.query_by_label(EXPOSURE_LABEL).is_some());
 }

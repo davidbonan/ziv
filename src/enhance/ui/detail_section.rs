@@ -1,6 +1,6 @@
 use egui::RichText;
 
-use crate::design::ui::adjustment_slider::{AdjustmentSlider, TrackScale};
+use crate::design::ui::adjustment_slider::{AdjustmentSlider, Track, TrackScale};
 use crate::design::ui::theme::{color, regular, type_size};
 use crate::develop::domain::edit::{FULL_INTENSITY, INTENSITY_RANGE};
 
@@ -15,6 +15,7 @@ const INTENSITY: AdjustmentSlider = AdjustmentSlider {
     step: 1.0,
     decimals: 0,
     scale: TrackScale::Linear,
+    track: Track::AccentFill,
 };
 
 pub struct DetailShown {

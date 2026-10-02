@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::library::domain::series::Import;
+
 fn is_hidden(path: &Path) -> bool {
     path.file_name()
         .is_some_and(|name| name.to_string_lossy().starts_with('.'))
@@ -31,4 +33,16 @@ pub fn photo_files_among(opened: &[PathBuf], is_photo: impl Fn(&Path) -> bool) -
         })
         .filter(|path| !is_hidden(path) && is_photo(path))
         .collect()
+}
+
+/// What opening `opened` imports: its photos, and its folder when it is exactly one folder.
+pub fn import_of(opened: &[PathBuf], is_photo: impl Fn(&Path) -> bool) -> Import {
+    let folder = match opened {
+        [only] if only.is_dir() => Some(only.clone()),
+        _ => None,
+    };
+    Import {
+        folder,
+        photos: photo_files_among(opened, is_photo),
+    }
 }

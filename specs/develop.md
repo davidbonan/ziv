@@ -132,7 +132,8 @@ The interface is part of the product, not a wrapper around it.
 
 30. Neutral dark surfaces with no color cast: nothing around the photo biases
     how its colors are judged. One accent color, used only for selection and
-    for values away from default.
+    for values away from default. Amended by `shell.md` rule 20: the Temp and
+    Tint tracks show their hues.
 31. One spacing scale, one type scale, tabular digits for values: nothing
     shifts by a pixel when a value changes.
 32. A slider whose default is in the middle fills from the middle; its handle

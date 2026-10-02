@@ -2,7 +2,6 @@ use std::path::Path;
 
 use crate::photo::domain::decode_error::DecodeError;
 use crate::photo::domain::decoded_photo::DecodedPhoto;
-use crate::photo::domain::photo_kind::PhotoKind;
 use crate::photo::domain::thumbnail::Thumbnail;
 
 use super::raw_file::{decode_raw_file, decode_raw_thumbnail};
@@ -36,10 +35,7 @@ impl FileDecoder {
 
     pub fn decode(&self, path: &Path) -> Result<DecodedPhoto, DecodeError> {
         match file_kind(path) {
-            Some(FileKind::StandardImage) => Ok(DecodedPhoto {
-                image: decode_standard_image_file(path)?,
-                kind: PhotoKind::StandardImage,
-            }),
+            Some(FileKind::StandardImage) => decode_standard_image_file(path),
             Some(FileKind::Raw) => decode_raw_file(path),
             None => Err(DecodeError::new("unsupported file type")),
         }

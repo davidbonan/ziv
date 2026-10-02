@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align, Button, Layout, RichText, vec2};
 
-use crate::design::ui::adjustment_slider::{AdjustmentSlider, TrackScale};
+use crate::design::ui::adjustment_slider::{AdjustmentSlider, Track, TrackScale};
 use crate::design::ui::theme::{color, medium, regular, space, type_size};
 use crate::export::domain::export_settings::{
     ExportFormat, ExportSettings, ExportSize, JPEG_QUALITY_RANGE, LONG_EDGE_RANGE,
@@ -33,6 +33,7 @@ const QUALITY: AdjustmentSlider = AdjustmentSlider {
     step: 1.0,
     decimals: 0,
     scale: TrackScale::Linear,
+    track: Track::AccentFill,
 };
 const LONG_EDGE: AdjustmentSlider = AdjustmentSlider {
     label: LONG_EDGE_LABEL,
@@ -41,6 +42,7 @@ const LONG_EDGE: AdjustmentSlider = AdjustmentSlider {
     step: 64.0,
     decimals: 0,
     scale: TrackScale::Reciprocal,
+    track: Track::AccentFill,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ziv — shell mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas: #1b1b1b;
+  --panel: #242424;
+  --raised: #303030;
+  --raised-hover: #3a3a3a;
+  --track: #474747;
+  --hairline: #111111;
+  --text: #e4e4e4;
+  --muted: #9a9a9a;
+  --disabled: #5c5c5c;
+  --accent: #f0a23b;
+  --danger: #e0705a;
+  --side-w: 236px;
+  --panel-w: 308px;
+  --radius: 5px;
+  --ui: "IBM Plex Sans", system-ui, sans-serif;
+  --num: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  background: #000;
+  color: var(--text);
+  font: 400 13px/1.35 var(--ui);
+  display: grid;
+  grid-template-rows: 38px 1fr;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+
+/* Outside the app: the mockup's own switcher */
+.mock {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 14px; background: #0a0a0a; color: #8a8a8a; font-size: 12px;
+}
+.mock b { color: #cfcfcf; font-weight: 500; }
+.mock .dirs { display: flex; gap: 2px; background: #1a1a1a; padding: 2px; border-radius: 6px; }
+.mock .dirs button { padding: 3px 10px; border-radius: 4px; color: #9a9a9a; }
+.mock .dirs button[aria-pressed="true"] { background: #333; color: #fff; }
+.mock .why { margin-left: auto; }
+
+/* ---------- App ---------- */
+.app { position: relative; display: grid; min-height: 0; background: var(--canvas); }
+
+.top {
+  grid-area: top; display: flex; align-items: center; gap: 10px;
+  padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--hairline);
+}
+.top .crumb { color: var(--muted); }
+.top .crumb strong { color: var(--text); font-weight: 500; }
+.top .spacer { flex: 1; }
+.top .zoom { font-family: var(--num); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.btn {
+  height: 26px; padding: 0 10px; border-radius: var(--radius);
+  background: var(--raised); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.btn:hover { background: var(--raised-hover); }
+.btn.primary { background: var(--accent); color: #1b1300; font-weight: 500; }
+.btn.primary:hover { background: #f6b257; }
+.btn.quiet { background: none; color: var(--muted); }
+.btn.quiet:hover { background: var(--raised); color: var(--text); }
+.icon {
+  width: 28px; height: 28px; border-radius: var(--radius);
+  display: inline-grid; place-items: center; color: var(--muted); flex: none;
+}
+.icon:hover { background: var(--raised); color: var(--text); }
+.icon[aria-pressed="true"] { background: var(--raised); color: var(--accent); }
+.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Sidebar: series ---------- */
+.side {
+  grid-area: side; background: var(--panel); border-right: 1px solid var(--hairline);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.side header { display: flex; align-items: center; padding: 10px 8px 6px 14px; }
+.side header h2 { font-size: 13px; font-weight: 500; flex: 1; }
+.series { list-style: none; padding: 0 6px; overflow-y: auto; }
+.series li {
+  display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center;
+  padding: 6px 8px; border-radius: var(--radius); cursor: pointer;
+}
+.series li:hover { background: #2b2b2b; }
+.series li[aria-current="true"] { background: var(--raised); }
+.series li[aria-current="true"] .name { color: var(--accent); }
+.series .stack { width: 40px; height: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border-radius: 3px; overflow: hidden; }
+.series .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.series .meta { color: var(--muted); font: 400 11px/1.4 var(--num); font-variant-numeric: tabular-nums; }
+.series li.missing .stack { opacity: .25; filter: grayscale(1); }
+.series li.missing .name { color: var(--disabled); }
+.series li.missing .meta { color: var(--danger); }
+.sheet-head { display: none; padding: 12px 14px 6px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--hairline); margin-top: 8px; }
+.sheet { display: none; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 10px 10px; overflow-y: auto; flex: 1; align-content: start; }
+
+/* ---------- Thumbnails ---------- */
+.thumb { position: relative; aspect-ratio: 3 / 2; border-radius: 3px; cursor: pointer; outline: 1px solid rgba(255,255,255,.08); outline-offset: -1px; flex: none; }
+.thumb[aria-current="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.thumb.edited::after { content: ""; position: absolute; right: 4px; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px rgba(0,0,0,.55); }
+.p1 { background: linear-gradient(180deg, #6f8fb0 0 45%, #2e3f4d 45% 62%, #1d2a30 62%); }
+.p2 { background: linear-gradient(180deg, #d9a56b 0 38%, #7a4a3a 38% 55%, #2b2226 55%); }
+.p3 { background: linear-gradient(160deg, #24303a, #5d7a86 55%, #c9d6d8); }
+.p4 { background: linear-gradient(180deg, #a9b7c2 0 52%, #e8ecee 52% 70%, #8497a3 70%); }
+.p5 { background: linear-gradient(200deg, #3c2f45, #a3566a 50%, #f0b27a); }
+.p6 { background: linear-gradient(180deg, #32506b 0 30%, #17232e 30%); }
+.p7 { background: linear-gradient(140deg, #dfe5e8, #93a4ad 60%, #46555e); }
+.p8 { background: linear-gradient(180deg, #51473f, #1f1c1a); }
+
+/* ---------- Viewport ---------- */
+.view { grid-area: view; position: relative; display: grid; place-items: center; padding: 28px; min-height: 0; min-width: 0; }
+.photo {
+  position: relative; width: min(100%, calc((100vh - 240px) * 1.5)); aspect-ratio: 3 / 2; overflow: hidden;
+  background: linear-gradient(180deg, #2a3f5f 0%, #5d7fa3 28%, #c7a889 47%, #e9c99b 52%, #3d5568 52.2%, #263845 75%, #141d24 100%);
+  outline: 1px solid rgba(255,255,255,.1); outline-offset: -1px;
+}
+.photo i { position: absolute; inset: 0; }
+.photo .far { background: #4c6076; clip-path: polygon(0 52%, 0 40%, 12% 33%, 22% 41%, 34% 24%, 44% 38%, 55% 30%, 66% 42%, 80% 28%, 92% 40%, 100% 35%, 100% 52%); }
+.photo .near { background: #1e2a33; clip-path: polygon(0 52%, 0 46%, 9% 42%, 18% 48%, 27% 37%, 37% 49%, 100% 52%); }
+.photo .snow { background: #dfe6ea; clip-path: polygon(34% 24%, 30% 31%, 33% 30%, 35% 34%, 38% 30%, 80% 28%, 76% 34%, 79% 33%, 81% 36%, 84% 32%, 80% 28%, 38% 30%); opacity: .8; }
+.photo .hut { background: #b8402f; clip-path: polygon(61% 55%, 61% 51.5%, 63.5% 49.5%, 66% 51.5%, 66% 55%); }
+.photo .mask { background: linear-gradient(180deg, rgba(224,70,60,.42) 0 34%, transparent 50%); display: none; }
+.app.overlay .photo .mask { display: block; }
+.pill { position: absolute; left: 50%; bottom: 14px; translate: -50% 0; background: rgba(36,36,36,.94); padding: 6px 12px; border-radius: 6px; color: var(--muted); white-space: nowrap; }
+
+/* ---------- Mask tools ---------- */
+.tools { display: flex; gap: 2px; align-items: center; }
+.tools .sep { width: 1px; height: 16px; background: var(--track); margin: 0 4px; }
+.rail { grid-area: rail; display: none; background: var(--panel); border-right: 1px solid var(--hairline); padding: 8px 0; justify-content: center; }
+.rail .tools { flex-direction: column; }
+.rail .tools .sep { width: 16px; height: 1px; margin: 4px 0; }
+.top-tools { display: none; padding-left: 10px; border-left: 1px solid var(--track); }
+.app[data-dir="c"] .top-tools { display: flex; }
+
+/* ---------- Develop panel ---------- */
+.panel { grid-area: panel; background: var(--panel); border-left: 1px solid var(--hairline); display: flex; flex-direction: column; min-height: 0; }
+.histo { padding: 12px 14px 8px; }
+.histo svg { display: block; width: 100%; height: 64px; background: #1d1d1d; border-radius: 3px; }
+.exif { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font: 400 11px/1 var(--num); font-variant-numeric: tabular-nums; }
+.tool-row { padding: 2px 10px 8px; border-bottom: 1px solid var(--hairline); }
+.scroll { overflow-y: auto; flex: 1; }
+section { border-bottom: 1px solid var(--hairline); }
+section > h3 { font-size: 12px; font-weight: 500; }
+section > h3 button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 9px 14px; text-align: left; font-weight: 500; }
+section > h3 button::before { content: ""; width: 0; height: 0; border: 3.5px solid transparent; border-left: 5px solid var(--muted); border-right: 0; transition: rotate .12s; }
+section[open-s] > h3 button::before { rotate: 90deg; }
+section > h3 .count { margin-left: auto; color: var(--accent); font: 400 11px var(--num); }
+section .body { display: none; padding: 0 14px 12px; }
+section[open-s] .body { display: block; }
+
+.slider { display: grid; grid-template-columns: 1fr auto; row-gap: 5px; padding: 4px 0 7px; cursor: ew-resize; user-select: none; }
+.slider label { color: var(--muted); pointer-events: none; }
+.slider output { font: 400 13px var(--num); font-variant-numeric: tabular-nums; color: var(--muted); }
+.slider .track { grid-column: 1 / -1; position: relative; height: 12px; }
+.slider .track::before { content: ""; position: absolute; left: 0; right: 0; top: 5px; height: 2px; background: var(--track); border-radius: 1px; }
+.slider .fill { position: absolute; top: 5px; height: 2px; background: var(--accent); }
+.slider .knob { position: absolute; top: 1px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #b9b9b9; box-shadow: 0 0 0 2px var(--panel); }
+.slider:hover .knob { background: #fff; }
+.slider.changed label { color: var(--text); }
+.slider.changed output { color: var(--accent); }
+.slider.hue .track::before { top: 4px; height: 4px; border-radius: 2px; }
+.slider.temp .track::before { background: linear-gradient(90deg, #2f6fd0, #7fa6d8 30%, #d8d2c0 50%, #e6c05a 72%, #e89a2a); }
+.slider.tint .track::before { background: linear-gradient(90deg, #3fa84a, #9cc79a 30%, #d4d0d2 50%, #d597cf 72%, #c94fc0); }
+.slider.hue .fill { display: none; }
+.slider.hue .knob { background: #e4e4e4; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px rgba(0,0,0,.4); }
+
+.masks { list-style: none; padding: 0; margin: 0 -6px 4px; }
+.masks li { display: flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; height: 30px; border-radius: var(--radius); cursor: pointer; }
+.masks li:hover { background: #2b2b2b; }
+.masks li[aria-current="true"] { background: var(--raised); }
+.masks li[aria-current="true"] span { color: var(--accent); }
+.masks li span { flex: 1; }
+.masks li em { font-style: normal; color: var(--muted); font-size: 11px; margin-right: 6px; }
+.masks .icon { width: 24px; height: 24px; }
+.sub { margin: 8px -14px -12px; padding: 4px 14px 10px; background: #1f1f1f; border-top: 1px solid var(--hairline); }
+.sub .head { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
+.sub .head b { font-weight: 500; flex: 1; }
+.enhance { display: flex; gap: 8px; align-items: center; padding: 2px 0 8px; color: var(--muted); }
+.foot { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hairline); }
+.foot .btn { flex: 1; justify-content: center; }
+
+/* ---------- Filmstrip ---------- */
+.film { grid-area: film; background: var(--panel); border-top: 1px solid var(--hairline); display: flex; align-items: center; gap: 6px; padding: 0 12px; overflow-x: auto; min-width: 0; }
+.film .thumb { height: 64px; }
+.film .where { color: var(--muted); font: 400 11px var(--num); font-variant-numeric: tabular-nums; padding-right: 8px; white-space: nowrap; }
+
+/* ============ A — Atelier: three columns, strip below ============ */
+.app[data-dir="a"] {
+  grid-template: "top top top" 40px "side view panel" 1fr "side film panel" 88px / var(--side-w) 1fr var(--panel-w);
+}
+
+/* ============ B — Planche: the series is a contact sheet ============ */
+.app[data-dir="b"] {
+  --side-w: 332px;
+  grid-template: "top top top top" 40px "side rail view panel" 1fr / var(--side-w) 44px 1fr var(--panel-w);
+}
+.app[data-dir="b"] .film, .app[data-dir="b"] .tool-row { display: none; }
+.app[data-dir="b"] .rail { display: flex; }
+.app[data-dir="b"] .series { flex: none; max-height: 38%; }
+.app[data-dir="b"] .sheet-head { display: block; }
+.app[data-dir="b"] .sheet { display: grid; }
+.app[data-dir="b"] .photo { width: min(100%, calc((100vh - 150px) * 1.5)); }
+
+/* ============ C — Chambre: floating cards, the canvas runs under them ============ */
+.app[data-dir="c"] { display: block; }
+.app[data-dir="c"] .view { position: absolute; inset: 60px calc(var(--panel-w) + 24px) 86px 72px; padding: 16px; }
+.app[data-dir="c"] .photo { width: min(100%, calc((100vh - 220px) * 1.5)); }
+.app[data-dir="c"] .top { position: absolute; z-index: 2; left: 72px; right: calc(var(--panel-w) + 24px); top: 12px; height: 40px; border: 0; border-radius: 8px; }
+.app[data-dir="c"] .tool-row { display: none; }
+.app[data-dir="c"] .side { position: absolute; z-index: 4; left: 12px; top: 12px; bottom: 12px; width: 48px; border: 0; border-radius: 8px; transition: width .14s; box-shadow: 0 0 0 1px var(--hairline); }
+.app[data-dir="c"] .side:hover, .app[data-dir="c"] .side:focus-within { width: 248px; }
+.app[data-dir="c"] .side header h2, .app[data-dir="c"] .series li > div:last-child { opacity: 0; transition: opacity .1s; white-space: nowrap; }
+.app[data-dir="c"] .side:hover header h2, .app[data-dir="c"] .side:hover .series li > div:last-child { opacity: 1; }
+.app[data-dir="c"] .side header { padding: 8px 10px; }
+.app[data-dir="c"] .series { padding: 0 4px; }
+.app[data-dir="c"] .series li { padding: 4px; grid-template-columns: 32px 1fr; }
+.app[data-dir="c"] .series .stack { width: 32px; height: 32px; }
+.app[data-dir="c"] .panel { position: absolute; right: 12px; top: 12px; bottom: 12px; width: var(--panel-w); border: 0; border-radius: 8px; overflow: hidden; }
+.app[data-dir="c"] .film { position: absolute; left: 72px; right: calc(var(--panel-w) + 24px); bottom: 12px; height: 62px; border: 0; border-radius: 8px; padding: 0 10px; }
+.app[data-dir="c"] .film .thumb { height: 46px; }
+.app[data-dir="c"] .pill { bottom: 4px; }
+
+.app.no-side[data-dir="a"], .app.no-side[data-dir="b"] { --side-w: 0px; }
+.app.no-side .side { border: 0; }
+.app.no-side[data-dir="c"] .side { display: none; }
+.app.no-side[data-dir="c"] :is(.top, .film) { left: 12px; }
+.app.no-side[data-dir="c"] .view { left: 12px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="mock">
+  <b>ziv shell</b>
+  <div class="dirs" role="group" aria-label="Direction">
+    <button data-dir="a" aria-pressed="true">A · Atelier</button>
+    <button data-dir="b">B · Planche</button>
+    <button data-dir="c">C · Chambre</button>
+  </div>
+  <span id="pitch"></span>
+  <span class="why">keys 1 2 3 · sliders drag · sections fold · click a series</span>
+</div>
+
+<div class="app" data-dir="a" id="app">
+  <div class="top">
+    <button class="icon" id="side-toggle" aria-label="Show or hide series" aria-pressed="true"><svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg></button>
+    <span class="crumb"><span id="crumb-series">Lofoten, février</span> / <strong id="crumb-photo">DSC07070.ARW</strong></span>
+    <span class="top-tools" id="top-tools"></span>
+    <span class="spacer"></span>
+    <span class="right" style="display:flex;gap:8px;align-items:center">
+      <span class="zoom">Fit · 24 %</span>
+      <button class="btn quiet">Before</button>
+      <button class="btn primary">Export…</button>
+    </span>
+  </div>
+
+  <aside class="side" aria-label="Series">
+    <header>
+      <h2>Series</h2>
+      <button class="icon" aria-label="Import photos"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+    </header>
+    <ul class="series" id="series"></ul>
+    <div class="sheet-head" id="sheet-head"></div>
+    <div class="sheet" id="sheet"></div>
+  </aside>
+
+  <div class="rail" id="rail"></div>
+
+  <main class="view">
+    <div class="photo">
+      <i class="far"></i><i class="snow"></i><i class="near"></i><i class="hut"></i><i class="mask"></i>
+    </div>
+    <div class="pill">Sky 1 · drag on the photo to move the mask</div>
+  </main>
+
+  <aside class="panel" aria-label="Develop">
+    <div class="histo">
+      <svg viewBox="0 0 280 64" preserveAspectRatio="none" aria-label="Histogram">
+        <path d="M0 64 L0 58 C20 50 28 20 44 26 S70 52 92 44 S120 12 140 22 S170 50 196 46 S230 30 250 48 S272 60 280 62 L280 64Z" fill="#8a8a8a" opacity=".55"/>
+        <path d="M0 64 L0 60 C30 56 40 30 62 34 S96 56 120 40 S150 18 176 30 S220 54 280 60 L280 64Z" fill="#cfcfcf" opacity=".35"/>
+      </svg>
+      <div class="exif"><span>ISO 400</span><span>35 mm</span><span>f/2.8</span><span>1/250 s</span></div>
+    </div>
+    <div class="tool-row" id="tool-row"></div>
+    <div class="scroll">
+      <section open-s>
+        <h3><button>Masks <span class="count">2</span></button></h3>
+        <div class="body">
+          <ul class="masks">
+            <li aria-current="true"><span>Sky 1</span><em>Sky</em><button class="icon" aria-label="Hide Sky 1"><svg viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></svg></button><button class="icon" aria-label="Delete Sky 1"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></li>
+            <li><span>Gradient 1</span><em>Linear</em><button class="icon" aria-label="Hide Gradient 1"><svg viewBox="0 0 16 16"><path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></svg></button><button class="icon" aria-label="Delete Gradient 1"><svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></li>
+          </ul>
+          <div class="sub">
+            <div class="head"><b>Sky 1</b><button class="btn quiet">Invert</button><button class="btn quiet" id="overlay">Overlay</button></div>
+            <div class="slider" data-v="-0.8" data-min="-5" data-max="5" data-d="2"><label>Exposure</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+            <div class="slider" data-v="-20" data-min="-100" data-max="100"><label>Highlights</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+            <div class="slider" data-v="0" data-min="-100" data-max="100"><label>Saturation</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          </div>
+        </div>
+      </section>
+      <section open-s>
+        <h3><button>White balance</button></h3>
+        <div class="body">
+          <div class="slider hue temp" data-v="5600" data-def="5200" data-min="2000" data-max="12000"><label>Temp</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider hue tint" data-v="0" data-min="-100" data-max="100"><label>Tint</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+        </div>
+      </section>
+      <section open-s>
+        <h3><button>Tone</button></h3>
+        <div class="body">
+          <div class="slider" data-v="0.35" data-min="-5" data-max="5" data-d="2"><label>Exposure</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="12" data-min="-100" data-max="100"><label>Contrast</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="-45" data-min="-100" data-max="100"><label>Highlights</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="30" data-min="-100" data-max="100"><label>Shadows</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="0" data-min="-100" data-max="100"><label>Whites</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="0" data-min="-100" data-max="100"><label>Blacks</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+        </div>
+      </section>
+      <section>
+        <h3><button>Presence</button></h3>
+        <div class="body">
+          <div class="slider" data-v="0" data-min="-100" data-max="100"><label>Vibrance</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+          <div class="slider" data-v="0" data-min="-100" data-max="100"><label>Saturation</label><output></output><div class="track"><div class="fill"></div><div class="knob"></div></div></div>
+        </div>
+      </section>
+      <section>
+        <h3><button>Detail</button></h3>
+        <div class="body">
+          <div class="enhance"><button class="btn">Enhance</button><span>Removes noise, about 20 s</span></div>
+        </div>
+      </section>
+    </div>
+    <div class="foot"><button class="btn">Copy</button><button class="btn">Paste</button><button class="btn">Reset</button></div>
+  </aside>
+
+  <div class="film" id="film"></div>
+</div>
+
+<script>
+const app = document.getElementById('app');
+const pitches = {
+  a: 'Three columns, filmstrip below. Closest to today, least risk.',
+  b: 'No filmstrip: the series is a contact sheet in the sidebar, tools on a rail. Tallest photo.',
+  c: 'Floating cards on one canvas. Series fold to a rail and open on hover, tools sit in the top bar.',
+};
+const seriesList = [
+  { name: 'Lofoten, février', n: 148, edited: 37, when: '28 Sep', p: [1, 4, 3, 6] },
+  { name: 'Mariage Léa & Tom', n: 412, edited: 0, when: '21 Sep', p: [2, 5, 7, 8] },
+  { name: '23 photos, 14 Sep', n: 23, edited: 23, when: '14 Sep', p: [5, 2, 8, 3] },
+  { name: 'Portraits studio', n: 64, edited: 12, when: '2 Sep', p: [8, 7, 8, 7], missing: true },
+];
+const tools = [
+  ['Linear gradient', '<path d="M2 4h12M2 8h12M2 12h12" opacity=".9"/><path d="M8 2v12" stroke-dasharray="1.5 2"/>'],
+  ['Radial gradient', '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/>'],
+  ['Rectangle', '<rect x="2.5" y="4" width="11" height="8" rx="1"/>'],
+  ['Polygon', '<path d="M8 2l5.5 4-2 7h-7l-2-7Z"/>'],
+  ['Brush', '<path d="M13.5 2.5l-7 7M6.5 9.5c-2.5 0-2 3-4.5 3.5 2.5 1 6 .5 6-2"/>'],
+  null,
+  ['Subject', '<circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-3 2.2-5 5-5s5 2 5 5"/>'],
+  ['Background', '<rect x="2" y="2" width="12" height="12" rx="1.5" stroke-dasharray="2 2"/><circle cx="8" cy="8" r="2"/>'],
+  ['Sky', '<path d="M4.5 12a2.8 2.8 0 0 1 .3-5.6A3.8 3.8 0 0 1 12 7.2a2.4 2.4 0 0 1-.4 4.8Z"/>'],
+  ['People', '<circle cx="5.5" cy="5.5" r="2"/><circle cx="11" cy="6" r="1.6"/><path d="M1.5 13c0-2.4 1.8-4 4-4s4 1.6 4 4M10.5 9.6c2.2-.3 4 1.2 4 3.4"/>'],
+];
+
+const toolbar = document.createElement('div');
+toolbar.className = 'tools';
+toolbar.setAttribute('role', 'toolbar');
+toolbar.setAttribute('aria-label', 'Add a mask');
+toolbar.innerHTML = tools.map(t => t
+  ? `<button class="icon" title="${t[0]}" aria-label="${t[0]}"><svg viewBox="0 0 16 16">${t[1]}</svg></button>`
+  : '<span class="sep"></span>').join('');
+toolbar.addEventListener('click', e => {
+  const b = e.target.closest('.icon'); if (!b) return;
+  const on = b.getAttribute('aria-pressed') === 'true';
+  toolbar.querySelectorAll('.icon').forEach(i => i.removeAttribute('aria-pressed'));
+  if (!on) b.setAttribute('aria-pressed', 'true');
+});
+
+function setDirection(dir) {
+  app.dataset.dir = dir;
+  document.querySelectorAll('.dirs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.dir === dir));
+  document.getElementById({ a: 'tool-row', b: 'rail', c: 'top-tools' }[dir]).append(toolbar);
+  document.getElementById('pitch').textContent = pitches[dir];
+}
+document.querySelector('.dirs').addEventListener('click', e => e.target.dataset.dir && setDirection(e.target.dataset.dir));
+addEventListener('keydown', e => ({ 1: 'a', 2: 'b', 3: 'c' })[e.key] && setDirection({ 1: 'a', 2: 'b', 3: 'c' }[e.key]));
+
+const seriesEl = document.getElementById('series');
+function thumbs(s, count) {
+  return Array.from({ length: count }, (_, i) => {
+    const p = s.p[(i * 7 + (i >> 2)) % 4];
+    const edited = i < s.edited * count / s.n;
+    return `<div class="thumb p${p}${edited ? ' edited' : ''}" ${i === 2 ? 'aria-current="true"' : ''}></div>`;
+  }).join('');
+}
+function showSeries(i) {
+  const s = seriesList[i];
+  if (s.missing) return;
+  seriesEl.querySelectorAll('li').forEach((li, j) => li.setAttribute('aria-current', j === i));
+  document.getElementById('crumb-series').textContent = s.name;
+  document.getElementById('film').innerHTML = `<span class="where">3 / ${s.n}</span>` + thumbs(s, 16);
+  document.getElementById('sheet').innerHTML = thumbs(s, 30);
+  document.getElementById('sheet-head').textContent = `${s.n} photos, ${s.edited} edited`;
+}
+seriesEl.innerHTML = seriesList.map(s => `
+  <li class="${s.missing ? 'missing' : ''}" tabindex="0">
+    <div class="stack">${s.p.map(p => `<i class="p${p}"></i>`).join('')}</div>
+    <div><div class="name">${s.name}</div>
+    <div class="meta">${s.missing ? 'Folder not found. Locate…' : `${s.edited} of ${s.n} edited, ${s.when}`}</div></div>
+  </li>`).join('');
+seriesEl.addEventListener('click', e => { const li = e.target.closest('li'); if (li) showSeries([...seriesEl.children].indexOf(li)); });
+
+document.getElementById('side-toggle').addEventListener('click', e => {
+  const off = app.classList.toggle('no-side');
+  e.currentTarget.setAttribute('aria-pressed', !off);
+});
+document.getElementById('overlay').addEventListener('click', () => app.classList.toggle('overlay'));
+document.querySelectorAll('section > h3 button').forEach(b => b.addEventListener('click', () => b.closest('section').toggleAttribute('open-s')));
+
+document.querySelectorAll('.slider').forEach(s => {
+  const min = +s.dataset.min, max = +s.dataset.max, def = +(s.dataset.def ?? 0), digits = +(s.dataset.d ?? 0);
+  const fill = s.querySelector('.fill'), knob = s.querySelector('.knob'), out = s.querySelector('output');
+  const at = v => (v - min) / (max - min) * 100;
+  const paint = v => {
+    const a = at(def), b = at(v);
+    knob.style.left = b + '%';
+    fill.style.left = Math.min(a, b) + '%';
+    fill.style.width = Math.abs(b - a) + '%';
+    const signed = def === 0 && v > 0 ? '+' : '';
+    out.textContent = signed + v.toFixed(digits);
+    s.classList.toggle('changed', v !== def);
+  };
+  const fromPointer = e => {
+    const r = s.querySelector('.track').getBoundingClientRect();
+    const t = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const step = digits ? 0.05 : max > 1000 ? 50 : 1;
+    paint(Math.round((min + t * (max - min)) / step) * step);
+  };
+  s.addEventListener('pointerdown', e => { s.setPointerCapture(e.pointerId); fromPointer(e); });
+  s.addEventListener('pointermove', e => s.hasPointerCapture(e.pointerId) && fromPointer(e));
+  s.addEventListener('dblclick', () => paint(def));
+  paint(+s.dataset.v);
+});
+
+setDirection('a');
+showSeries(0);
+</script>
+</body>
+</html>

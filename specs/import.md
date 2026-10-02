@@ -13,7 +13,7 @@ filmstrip, and look at the selected one in a viewport with zoom and pan.
 - RAW shown neutral: camera white balance and correct colors, no tone curve.
 
 **Out**
-- Persistent catalog: nothing is remembered between two launches.
+- Remembering the open photos between two launches: `catalog.md`.
 - Sub-folder recursion, grid view, ratings, flags, metadata panel, deletion.
 - Any adjustment, including the base tone curve (M2), and export (M3).
 - ICC profiles, wide-gamut display (ADR 0002).
@@ -39,7 +39,8 @@ filmstrip, and look at the selected one in a viewport with zoom and pan.
 2. Dropping files or a folder on the window opens them the same way.
 3. A folder contributes its direct children with a supported extension;
    sub-folders are not entered. Hidden files are skipped.
-4. Opening **replaces** the session: the previous photos are closed.
+4. Opening **replaces** the session: the previous photos leave the filmstrip.
+   They stay reachable as a series (`catalog.md` rule 3).
 5. Photos are ordered by file name, natural order (`DSC2` before `DSC10`),
    case-insensitive.
 6. After opening, the first photo is selected.

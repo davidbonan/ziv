@@ -28,16 +28,24 @@ src/<module>/<part>/{domain,application,infrastructure,ui}/
 src/main.rs                      eframe wrapper
 src/lib.rs                       module declarations
 src/app.rs                       ZivApp, run()
-src/design/ui/                   theme (colors, spacing, type), AdjustmentSlider, icon button, floating pill, Notice
+src/design/ui/                   theme (colors, hues, spacing, type), AdjustmentSlider (accent or hue track), icon button and toggle,
+                                 primary button, folding section, floating pill, Notice
+src/shell/ui/                    top bar: sidebar button, series and photo names, zoom readout, Before, Export…
 src/color/domain/                primaries, matrices, sRGB transfer, working space, Illuminant
 src/photo/application/           PhotoLoader (worker thread)
-src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, Thumbnail, Orientation, CameraCalibration, DecodeError
-src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`)
+src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, ShootingData, Thumbnail, Orientation, CameraCalibration, DecodeError
+src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`); shooting data from EXIF (`rawler`);
+                                 ThumbnailCache (JPEG files in the cache folder)
+src/photo/ui/                    shooting data line
+src/histogram/domain/            Histogram: luminance and channel counts per display level, heights, sample size
+src/histogram/infrastructure/    DevelopedHistogram: the photo rendered small by the engine and counted, once per development
+src/histogram/ui/                histogram plot
 src/develop/application/         SessionEdits: edits of the session, stored as they settle
 src/develop/infrastructure/      SidecarFiles: one JSON file next to each edited photo
 src/develop/domain/              Edit (Adjustments + masks), EditHistory, CopiedEdit, WhiteBalance, Tone, Presence, BaseRendering, Development;
                                  Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay
-src/develop/ui/                  develop panel, masks section, mask canvas (drawing and handles over the photo), Before badge
+src/develop/ui/                  develop panel (tool bar, folding sections, foot), mask tool bar and masks list,
+                                 mask canvas (drawing and handles over the photo), Before badge
 src/export/domain/               ExportSettings: format, size, destination, file naming
 src/export/application/          ExportRun: several photos exported in the background
 src/export/infrastructure/       one photo → file (`image` encoders), destination picker
@@ -47,12 +55,14 @@ src/enhance/domain/              Enhancement (differences from the original), Mo
 src/enhance/application/         Enhancer: photo → enhancement, tile by tile; EnhancementRun (worker thread, Cancel)
 src/enhance/infrastructure/      EnhancementFiles: one file next to each enhanced photo; photo → enhancement file; upload with enhancement
 src/enhance/ui/                  Detail section (Enhance, Intensity), enhancement progress
-src/viewport/domain/             View: fit, zoom, pan → Placement
+src/viewport/domain/             View: fit, zoom, pan → Placement; zoom readout
 src/viewport/infrastructure/     PhotoPresenter: engine output → egui texture
 src/viewport/ui/                 photo_viewport, loading / failed status
-src/library/domain/              Session, natural order
-src/library/infrastructure/      photo files among opened paths, native picker
-src/library/ui/                  empty state, filmstrip
+src/library/domain/              Catalog, Series (Import, ImportDay), Session, natural order, the catalog document; port: CatalogStorage
+src/library/application/         StoredCatalog: the catalog, stored as it changes
+src/library/infrastructure/      photo files among opened paths, native pickers, Finder, CatalogFile (one JSON file in the data folder), today,
+                                 SeriesCovers (cover thumbnails → egui textures, worker thread)
+src/library/ui/                  empty state, filmstrip, series sidebar
 src/models/domain/               Model (its files: address, checksum, size); ports: ModelSource, ModelRunner
 src/models/application/          ModelStore: download at first use, checked, kept
 src/models/infrastructure/       HTTPS downloads, models folder, ONNX Runtime runner (`ort`): CPU, or GPU for a model of fixed shape
@@ -71,7 +81,9 @@ tests/fixtures/, tests/golden/   input files, reference renders
 Modules are added by the milestone that needs them, not ahead of it.
 
 ## 4. Threads
-- **UI thread**: egui frames, engine renders at screen resolution, nothing else.
+- **UI thread**: egui frames, engine renders at screen resolution, and one
+  reduced render read back per change of the development for the histogram
+  (about 4 ms, `specs/histogram.md` rule 8); nothing else.
 - **Viewed-photo loader** (`PhotoLoader`, one worker, `Backlog::LoadNewestOnly`):
   decodes a file and uploads it to the GPU (`Engine::upload`; `wgpu::Device` and
   `Queue` are shared across threads). Requests made obsolete while it was busy
@@ -79,6 +91,9 @@ Modules are added by the milestone that needs them, not ahead of it.
 - **Thumbnail loader** (`PhotoLoader`, one worker, `Backlog::LoadAll`): one
   thumbnail per photo of the session, in order; replaced by a new one when
   another session is opened.
+- **Cover loader** (`SeriesCovers`, one worker, `Backlog::LoadAll`): the first
+  thumbnails of every series, for the sidebar. Both thumbnail workers read the
+  thumbnail cache before decoding a photo.
 - **Export worker** (`ExportRun`, one thread per export): decodes, uploads,
   renders (`Engine::render_pixels`, strip by strip), encodes and writes each
   photo. Display-stage renders are serialized by a lock: their uniforms are shared.

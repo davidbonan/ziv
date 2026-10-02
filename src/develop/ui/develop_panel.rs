@@ -2,8 +2,9 @@ use std::ops::RangeInclusive;
 
 use egui::{Key, Modifiers};
 
-use crate::design::ui::adjustment_slider::{AdjustmentSlider, TrackScale};
-use crate::design::ui::theme::{color, medium, regular, space, type_size};
+use crate::design::ui::adjustment_slider::{AdjustmentSlider, Track, TrackScale};
+use crate::design::ui::section::{SectionTitle, section};
+use crate::design::ui::theme::{color, hue, medium, regular, space, type_size};
 use crate::develop::domain::adjustments::{ADJUSTMENT_RANGE, Adjustments, EXPOSURE_RANGE};
 use crate::develop::domain::brush::{Brush, FLOW_RANGE, SIZE_RANGE};
 use crate::develop::domain::edit::Edit;
@@ -17,7 +18,7 @@ use crate::enhance::ui::detail_section::{DetailShown, detail_section};
 use crate::photo::domain::photo_kind::PhotoKind;
 
 use super::masks_section::{
-    MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, masks_section,
+    MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, mask_tool_bar, masks_list,
 };
 
 pub const TEMPERATURE_LABEL: &str = "Temp";
@@ -32,9 +33,9 @@ pub const VIBRANCE_LABEL: &str = "Vibrance";
 pub const SATURATION_LABEL: &str = "Saturation";
 pub const PRESENCE_GROUP_LABEL: &str = "Presence";
 pub const DETAIL_GROUP_LABEL: &str = "Detail";
-pub const PANEL_TITLE: &str = "Develop";
 pub const RESET_LABEL: &str = "Reset";
-pub const BEFORE_LABEL: &str = "Before";
+pub const COPY_LABEL: &str = "Copy";
+pub const PASTE_LABEL: &str = "Paste";
 pub const INVERT_LABEL: &str = "Invert";
 pub const DONE_LABEL: &str = "Done";
 pub const OVERLAY_LABEL: &str = "Overlay";
@@ -55,6 +56,7 @@ const EXPOSURE: AdjustmentSlider = AdjustmentSlider {
     step: 0.1,
     decimals: 2,
     scale: TrackScale::Linear,
+    track: Track::AccentFill,
 };
 
 const fn whole_number_adjustment(
@@ -68,6 +70,7 @@ const fn whole_number_adjustment(
         step: 1.0,
         decimals: 0,
         scale: TrackScale::Linear,
+        track: Track::AccentFill,
     }
 }
 
@@ -88,21 +91,38 @@ const BLACKS: AdjustmentSlider = whole_number_adjustment(BLACKS_LABEL, ADJUSTMEN
 const VIBRANCE: AdjustmentSlider = whole_number_adjustment(VIBRANCE_LABEL, ADJUSTMENT_RANGE);
 const SATURATION: AdjustmentSlider = whole_number_adjustment(SATURATION_LABEL, ADJUSTMENT_RANGE);
 
+const TEMPERATURE_TRACK: Track = Track::Hues {
+    start: hue::COOL,
+    end: hue::WARM,
+};
+const TINT_TRACK: Track = Track::Hues {
+    start: hue::GREEN,
+    end: hue::MAGENTA,
+};
+
 fn temperature_slider(kind: &PhotoKind) -> AdjustmentSlider {
-    match kind {
+    let on_its_range = match kind {
         PhotoKind::Raw { .. } => AdjustmentSlider {
             step: KELVIN_STEP,
             scale: TrackScale::Reciprocal,
             ..whole_number_adjustment(TEMPERATURE_LABEL, KELVIN_RANGE)
         },
         PhotoKind::StandardImage => whole_number_adjustment(TEMPERATURE_LABEL, RELATIVE_RANGE),
+    };
+    AdjustmentSlider {
+        track: TEMPERATURE_TRACK,
+        ..on_its_range
     }
 }
 
 fn tint_slider(kind: &PhotoKind) -> AdjustmentSlider {
-    match kind {
-        PhotoKind::Raw { .. } => whole_number_adjustment(TINT_LABEL, KELVIN_TINT_RANGE),
-        PhotoKind::StandardImage => whole_number_adjustment(TINT_LABEL, RELATIVE_RANGE),
+    let range = match kind {
+        PhotoKind::Raw { .. } => KELVIN_TINT_RANGE,
+        PhotoKind::StandardImage => RELATIVE_RANGE,
+    };
+    AdjustmentSlider {
+        track: TINT_TRACK,
+        ..whole_number_adjustment(TINT_LABEL, range)
     }
 }
 
@@ -129,14 +149,6 @@ fn white_balance_sliders(
     (left != as_shot).then_some(left)
 }
 
-fn group_title(ui: &mut egui::Ui, title: &str) {
-    let text = egui::RichText::new(title)
-        .font(regular(type_size::CAPTION))
-        .color(color::TEXT_MUTED);
-    ui.label(text);
-    ui.add_space(space::XS);
-}
-
 /// What the panel shows, and what the user made of it this frame.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DevelopPanelState {
@@ -153,9 +165,23 @@ pub struct DevelopPanelState {
     pub is_enhancing: bool,
     /// The user asked for the photo to be enhanced this frame.
     pub is_enhancement_asked: bool,
+    /// An edit was copied: it can be pasted.
+    pub can_paste: bool,
+    /// The user asked this frame for the edit to be copied.
+    pub is_copy_asked: bool,
+    /// The user asked this frame for the copied edit to be pasted.
+    pub is_paste_asked: bool,
 }
 
 impl DevelopPanelState {
+    fn masks_shown(&self) -> MasksShown<'_> {
+        MasksShown {
+            edit: &self.edit,
+            selection: self.mask_selection,
+            is_detecting: self.is_detecting,
+        }
+    }
+
     fn selected_mask(&self) -> Option<usize> {
         self.mask_selection
             .selected
@@ -203,33 +229,46 @@ impl DevelopPanelState {
     }
 }
 
-struct HeaderOutput {
+struct FootOutput {
+    is_copy_asked: bool,
+    is_paste_asked: bool,
     is_reset_asked: bool,
-    is_before_toggled: bool,
 }
 
-fn panel_header(ui: &mut egui::Ui, state: &DevelopPanelState) -> HeaderOutput {
-    let title = egui::RichText::new(PANEL_TITLE)
-        .font(medium(type_size::TITLE))
-        .color(color::TEXT);
+/// Copy, Paste and Reset, at the bottom of the panel whatever is scrolled.
+fn panel_foot(ui: &mut egui::Ui, state: &DevelopPanelState) -> FootOutput {
     let is_edited = state.edit != Edit::default();
-    let output = ui
-        .horizontal(|ui| {
-            ui.label(title);
-            let to_the_right = egui::Layout::right_to_left(egui::Align::Center);
-            ui.with_layout(to_the_right, |ui| {
-                let reset = ui.add_enabled(is_edited, egui::Button::new(RESET_LABEL));
-                let before = egui::Button::new(BEFORE_LABEL).selected(state.is_before_shown);
-                HeaderOutput {
-                    is_reset_asked: reset.clicked(),
-                    is_before_toggled: ui.add(before).clicked(),
-                }
+    let buttons = [
+        (COPY_LABEL, true),
+        (PASTE_LABEL, state.can_paste),
+        (RESET_LABEL, is_edited),
+    ];
+    let frame = egui::Frame::new().inner_margin(egui::Margin {
+        top: space::S as i8,
+        ..egui::Margin::ZERO
+    });
+    let [is_copy_asked, is_paste_asked, is_reset_asked] = egui::Panel::bottom("develop foot")
+        .frame(frame)
+        .show(ui, |ui| {
+            ui.columns_const(|columns: &mut [egui::Ui; 3]| {
+                [0, 1, 2].map(|index| {
+                    let (label, is_enabled) = buttons[index];
+                    let column = &mut columns[index];
+                    let size =
+                        egui::vec2(column.available_width(), column.spacing().interact_size.y);
+                    let button = column.add_enabled_ui(is_enabled, |ui| {
+                        ui.add_sized(size, egui::Button::new(label))
+                    });
+                    button.inner.clicked()
+                })
             })
-            .inner
         })
         .inner;
-    ui.add_space(space::M);
-    output
+    FootOutput {
+        is_copy_asked,
+        is_paste_asked,
+        is_reset_asked,
+    }
 }
 
 /// Says why a photo's edits cannot be changed: what is stored for it is unusable.
@@ -244,22 +283,30 @@ pub fn edits_left_alone_warning(ui: &mut egui::Ui, reason: &str) {
 }
 
 fn adjusted(ui: &mut egui::Ui, kind: &PhotoKind, adjustments: Adjustments) -> Adjustments {
-    let mut adjustments = adjustments;
-    group_title(ui, WHITE_BALANCE_GROUP_LABEL);
-    adjustments.white_balance = white_balance_sliders(ui, kind, adjustments.white_balance);
-    ui.add_space(space::M);
-    group_title(ui, TONE_GROUP_LABEL);
-    adjustments.exposure = EXPOSURE.show(ui, adjustments.exposure);
-    adjustments.contrast = CONTRAST.show(ui, adjustments.contrast);
-    adjustments.highlights = HIGHLIGHTS.show(ui, adjustments.highlights);
-    adjustments.shadows = SHADOWS.show(ui, adjustments.shadows);
-    adjustments.whites = WHITES.show(ui, adjustments.whites);
-    adjustments.blacks = BLACKS.show(ui, adjustments.blacks);
-    ui.add_space(space::M);
-    group_title(ui, PRESENCE_GROUP_LABEL);
-    adjustments.vibrance = VIBRANCE.show(ui, adjustments.vibrance);
-    adjustments.saturation = SATURATION.show(ui, adjustments.saturation);
-    adjustments
+    let white_balance = section(ui, &SectionTitle::of(WHITE_BALANCE_GROUP_LABEL), |ui| {
+        white_balance_sliders(ui, kind, adjustments.white_balance)
+    });
+    let tone = section(ui, &SectionTitle::of(TONE_GROUP_LABEL), |ui| Adjustments {
+        exposure: EXPOSURE.show(ui, adjustments.exposure),
+        contrast: CONTRAST.show(ui, adjustments.contrast),
+        highlights: HIGHLIGHTS.show(ui, adjustments.highlights),
+        shadows: SHADOWS.show(ui, adjustments.shadows),
+        whites: WHITES.show(ui, adjustments.whites),
+        blacks: BLACKS.show(ui, adjustments.blacks),
+        ..adjustments
+    });
+    let toned = tone.unwrap_or(adjustments);
+    let presence = section(ui, &SectionTitle::of(PRESENCE_GROUP_LABEL), |ui| {
+        Adjustments {
+            vibrance: VIBRANCE.show(ui, toned.vibrance),
+            saturation: SATURATION.show(ui, toned.saturation),
+            ..toned
+        }
+    });
+    Adjustments {
+        white_balance: white_balance.unwrap_or(adjustments.white_balance),
+        ..presence.unwrap_or(toned)
+    }
 }
 
 /// The name of the mask being adjusted and Done. Whether Done was asked.
@@ -355,16 +402,18 @@ fn photo_adjusted(
 ) -> DevelopPanelState {
     let mut state = state;
     state.edit.adjustments = adjusted(ui, kind, state.edit.adjustments);
-    ui.add_space(space::M);
-    group_title(ui, DETAIL_GROUP_LABEL);
     let shown = DetailShown {
         is_enhanced: state.is_enhanced,
         is_enhancing: state.is_enhancing,
         intensity: state.edit.enhancement_intensity,
     };
-    let detail = detail_section(ui, &shown);
-    state.edit.enhancement_intensity = detail.intensity;
-    state.is_enhancement_asked = detail.is_enhancement_asked;
+    let detail = section(ui, &SectionTitle::of(DETAIL_GROUP_LABEL), |ui| {
+        detail_section(ui, &shown)
+    });
+    if let Some(detail) = detail {
+        state.edit.enhancement_intensity = detail.intensity;
+        state.is_enhancement_asked = detail.is_enhancement_asked;
+    }
     state
 }
 
@@ -373,22 +422,15 @@ fn masks_and_adjustments(
     kind: &PhotoKind,
     state: DevelopPanelState,
 ) -> DevelopPanelState {
-    group_title(ui, MASKS_GROUP_LABEL);
-    let intent = ui
-        .scope(|ui| {
-            let shown = MasksShown {
-                edit: &state.edit,
-                selection: state.mask_selection,
-                is_detecting: state.is_detecting,
-            };
-            masks_section(ui, &shown)
-        })
-        .inner;
-    let state = match intent {
+    let title = SectionTitle {
+        text: MASKS_GROUP_LABEL,
+        count: Some(state.edit.masks.len()),
+    };
+    let intent = section(ui, &title, |ui| masks_list(ui, &state.masks_shown()));
+    let state = match intent.flatten() {
         Some(intent) => state.after(intent),
         None => state,
     };
-    ui.add_space(space::M);
     match state.selected_mask() {
         Some(selected) => mask_adjusted(ui, state, selected),
         None => photo_adjusted(ui, kind, state),
@@ -430,21 +472,33 @@ pub fn develop_panel(
     state: DevelopPanelState,
 ) -> DevelopPanelState {
     ui.spacing_mut().item_spacing.y = space::S;
-    let header = panel_header(ui, &state);
-    if header.is_reset_asked {
-        return DevelopPanelState::default();
+    let foot = panel_foot(ui, &state);
+    if foot.is_reset_asked {
+        return DevelopPanelState {
+            can_paste: state.can_paste,
+            ..DevelopPanelState::default()
+        };
     }
     let shown = (state.edit.clone(), state.is_before_shown);
     let state = after_mask_keys(ui, state);
-    // Room for the scroll bar: it would otherwise cover the values.
-    ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
+    let state = match mask_tool_bar(ui, &state.masks_shown()) {
+        Some(intent) => state.after(intent),
+        None => state,
+    };
+    // Room kept for the scroll bar whether it shows or not: folding a section moves no value.
+    let width_beside_scroll_bar = ui.available_width() - ui.spacing().scroll.bar_width;
     let left = egui::ScrollArea::vertical()
-        .show(ui, |ui| masks_and_adjustments(ui, kind, state))
+        .auto_shrink(false)
+        .show(ui, |ui| {
+            ui.set_max_width(width_beside_scroll_bar);
+            masks_and_adjustments(ui, kind, state)
+        })
         .inner;
     let (shown_edit, was_before_shown) = shown;
-    let is_edit_changed = left.edit != shown_edit;
     DevelopPanelState {
-        is_before_shown: !is_edit_changed && (was_before_shown != header.is_before_toggled),
+        is_before_shown: was_before_shown && left.edit == shown_edit,
+        is_copy_asked: foot.is_copy_asked,
+        is_paste_asked: foot.is_paste_asked,
         ..left
     }
 }

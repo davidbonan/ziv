@@ -14,6 +14,11 @@ pub fn sidecar_path(photo: &Path) -> PathBuf {
     file_beside(photo, SIDECAR_SUFFIX)
 }
 
+/// Whether `photo` is edited: an unedited photo has no sidecar.
+pub fn has_sidecar(photo: &Path) -> bool {
+    sidecar_path(photo).exists()
+}
+
 fn remove_if_present(path: &Path) -> std::io::Result<()> {
     match fs::remove_file(path) {
         Err(error) if error.kind() != ErrorKind::NotFound => Err(error),

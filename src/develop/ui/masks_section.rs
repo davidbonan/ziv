@@ -1,6 +1,6 @@
 use egui::{Align, Align2, Layout, Sense, WidgetInfo, WidgetType, vec2};
 
-use crate::design::ui::icon_button::{Icon, icon_button};
+use crate::design::ui::icon_button::{Icon, icon_button, icon_toggle};
 use crate::design::ui::theme::{CONTROL_RADIUS, color, regular, space, type_size};
 use crate::develop::domain::brush::Brush;
 use crate::develop::domain::edit::Edit;
@@ -8,6 +8,7 @@ use crate::develop::domain::mask::{Mask, MaskKind, MaskShape};
 use crate::develop::domain::zone::{DetectionTool, ZoneTool};
 
 pub const MASKS_GROUP_LABEL: &str = "Masks";
+pub const NO_MASK_HINT: &str = "No mask yet: pick a tool above.";
 pub const LINEAR_GRADIENT_TOOL_LABEL: &str = "Linear";
 pub const RADIAL_GRADIENT_TOOL_LABEL: &str = "Radial";
 pub const RECTANGLE_TOOL_LABEL: &str = "Rectangle";
@@ -19,23 +20,43 @@ pub const BACKGROUND_TOOL_LABEL: &str = "Background";
 pub const SKY_TOOL_LABEL: &str = "Sky";
 pub const PEOPLE_TOOL_LABEL: &str = "People";
 
-const ZONE_TOOLS: [(DetectionTool, &str); 4] = [
-    (DetectionTool::Zone(ZoneTool::Subject), SUBJECT_TOOL_LABEL),
+const ZONE_TOOLS: [(DetectionTool, &str, Icon); 4] = [
+    (
+        DetectionTool::Zone(ZoneTool::Subject),
+        SUBJECT_TOOL_LABEL,
+        Icon::Subject,
+    ),
     (
         DetectionTool::Zone(ZoneTool::Background),
         BACKGROUND_TOOL_LABEL,
+        Icon::Background,
     ),
-    (DetectionTool::Zone(ZoneTool::Sky), SKY_TOOL_LABEL),
-    (DetectionTool::People, PEOPLE_TOOL_LABEL),
+    (
+        DetectionTool::Zone(ZoneTool::Sky),
+        SKY_TOOL_LABEL,
+        Icon::Sky,
+    ),
+    (DetectionTool::People, PEOPLE_TOOL_LABEL, Icon::People),
 ];
 
-const TOOLS: [(MaskKind, &str); 5] = [
-    (MaskKind::LinearGradient, LINEAR_GRADIENT_TOOL_LABEL),
-    (MaskKind::RadialGradient, RADIAL_GRADIENT_TOOL_LABEL),
-    (MaskKind::Rectangle, RECTANGLE_TOOL_LABEL),
-    (MaskKind::Polygon, POLYGON_TOOL_LABEL),
-    (MaskKind::Brush, BRUSH_TOOL_LABEL),
+const TOOLS: [(MaskKind, &str, Icon); 5] = [
+    (
+        MaskKind::LinearGradient,
+        LINEAR_GRADIENT_TOOL_LABEL,
+        Icon::LinearGradient,
+    ),
+    (
+        MaskKind::RadialGradient,
+        RADIAL_GRADIENT_TOOL_LABEL,
+        Icon::RadialGradient,
+    ),
+    (MaskKind::Rectangle, RECTANGLE_TOOL_LABEL, Icon::Rectangle),
+    (MaskKind::Polygon, POLYGON_TOOL_LABEL, Icon::Polygon),
+    (MaskKind::Brush, BRUSH_TOOL_LABEL, Icon::Brush),
 ];
+
+const TOOL_SPACING: f32 = 2.0;
+const TOOL_SEPARATOR_HEIGHT: f32 = 14.0;
 
 /// What the masks of the photo are being worked on with: the mask whose
 /// adjustments the panel shows, or the tool about to draw a new one.
@@ -120,30 +141,43 @@ pub fn remove_label(mask_name: &str) -> String {
 
 fn tools(ui: &mut egui::Ui, edit: &Edit, armed: Option<MaskKind>) -> Option<MaskKind> {
     ui.add_enabled_ui(edit.has_room_for_a_mask(), |ui| {
-        ui.horizontal_wrapped(|ui| {
-            TOOLS.into_iter().find(|(kind, label)| {
-                let tool = egui::Button::new(*label).selected(armed == Some(*kind));
-                ui.add(tool).clicked()
+        TOOLS
+            .into_iter()
+            .find(|(kind, label, icon)| {
+                icon_toggle(ui, *icon, label, armed == Some(*kind)).clicked()
             })
-        })
-        .inner
+            .map(|(kind, _, _)| kind)
     })
     .inner
-    .map(|(kind, _)| kind)
 }
 
 fn zone_tools(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<DetectionTool> {
     let can_detect = shown.edit.has_room_for_a_mask() && !shown.is_detecting;
     ui.add_enabled_ui(can_detect, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ZONE_TOOLS
-                .into_iter()
-                .find(|(_, label)| ui.button(*label).clicked())
-        })
-        .inner
+        ZONE_TOOLS
+            .into_iter()
+            .find(|(_, label, icon)| icon_toggle(ui, *icon, label, false).clicked())
+            .map(|(tool, _, _)| tool)
     })
     .inner
-    .map(|(tool, _)| tool)
+}
+
+fn tool_separator(ui: &mut egui::Ui) {
+    let (area, _) = ui.allocate_exact_size(vec2(space::S, TOOL_SEPARATOR_HEIGHT), Sense::hover());
+    let line = egui::Stroke::new(1.0, color::TRACK);
+    ui.painter().vline(area.center().x, area.y_range(), line);
+}
+
+/// The tools that draw a mask, then those that detect one, as one row of icons.
+pub fn mask_tool_bar(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksIntent> {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = TOOL_SPACING;
+        let armed = tools(ui, shown.edit, shown.selection.armed_tool).map(MasksIntent::Arm);
+        tool_separator(ui);
+        let detected = zone_tools(ui, shown).map(MasksIntent::Detect);
+        armed.or(detected)
+    })
+    .inner
 }
 
 struct MaskRow<'a> {
@@ -208,14 +242,18 @@ pub struct MasksShown<'a> {
     pub is_detecting: bool,
 }
 
-/// The mask tools, the zone tools and the list of the photo's masks.
-pub fn masks_section(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksIntent> {
+/// The list of the photo's masks.
+pub fn masks_list(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksIntent> {
     let MasksShown {
         edit, selection, ..
     } = shown;
-    let armed = tools(ui, edit, selection.armed_tool).map(MasksIntent::Arm);
-    let detected = zone_tools(ui, shown).map(MasksIntent::Detect);
-    let mut intent = armed.or(detected);
+    if edit.masks.is_empty() {
+        let hint = egui::RichText::new(NO_MASK_HINT)
+            .font(regular(type_size::CAPTION))
+            .color(color::TEXT_MUTED);
+        ui.label(hint);
+    }
+    let mut intent = None;
     ui.spacing_mut().item_spacing.y = space::XS;
     for (index, (mask, name)) in edit.masks.iter().zip(edit.mask_names()).enumerate() {
         let row = MaskRow {

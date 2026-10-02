@@ -57,12 +57,14 @@ use ziv::app::ZivApp;
 fn headless_verify() {
     let session_dir = std::env::var("HV_SESSION_DIR").expect("HV_SESSION_DIR set by the skill");
     std::fs::create_dir_all(&session_dir).unwrap();
+    // Never the real catalog: ZivApp::new reads and writes the user's own.
+    let data_folder = std::path::PathBuf::from(format!("{session_dir}/data"));
 
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .with_os(egui::os::OperatingSystem::Mac)
         .wgpu()
-        .build_eframe(|cc| ZivApp::new(cc));
+        .build_eframe(|cc| ZivApp::keeping_data_in(cc, data_folder.clone()));
     harness.run();
 
     let tree = format!("{:#?}", harness.root());
@@ -99,10 +101,13 @@ Never a glob. Never delete `verify-artifacts/`.
 PASS / FAIL · what was verified · PNG paths · relevant a11y excerpt · panic message if any.
 
 ## Seeding state
-`ZivApp::new(cc)` starts with an empty library. Native dialogs (file picker) hang
+`ZivApp::keeping_data_in(cc, folder)` keeps the catalog in `folder`: empty
+folder, empty library; a folder a previous harness wrote to, the series it left
+(a relaunch). `ZivApp::new(cc)` uses this Mac's data folder: never in a harness.
+Native dialogs (file picker) hang
 a headless run: never drive them. State is injected through a constructor seam:
 
-- `ZivApp::opening(cc, &paths)` — the app as if the user had opened those files
+- `.opening(&paths)` chained on it — the app as if the user had opened those files
   or folders (`tests/fixtures/…`, `tests/fixtures/local/DSC07070.ARW` when
   present). A drop is injected with `harness.input_mut().dropped_files.push(…)`
   (an `Arc` of a small `egui::DroppedFile` impl), then `harness.step()`. Loading is asynchronous:
@@ -125,7 +130,7 @@ output is asserted by golden tests (`specs/testing.md` §5).
 ## egui_kittest cheatsheet (0.36)
 | Need | Call |
 |---|---|
-| Whole app | `Harness::builder().with_size(..).with_os(Mac).wgpu().build_eframe(\|cc\| ZivApp::new(cc))` |
+| Whole app | `Harness::builder().with_size(..).with_os(Mac).wgpu().build_eframe(\|cc\| ZivApp::keeping_data_in(cc, folder))` |
 | Component | `Harness::new_ui(\|ui\| component(ui, …))` |
 | Component + state | `Harness::new_ui_state(\|ui, state\| …, state)` |
 | Advance a frame | `harness.run()` |

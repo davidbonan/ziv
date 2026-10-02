@@ -26,3 +26,17 @@ while body[i] == 0xff and body[i+1] != 0xda:
         segments += body[i:i+2+length]
     i += 2+length
 open(f'{out}/patches_rotated_90_cw.jpg','wb').write(b'\xff\xd8' + app1 + segments + body[i:])
+def rational(numerator, denominator):
+    return struct.pack('>II', numerator, denominator)
+def entry(tag, kind, value):
+    return struct.pack('>HHI', tag, kind, 1) + value
+EXIF_IFD = 26
+VALUES = EXIF_IFD + 2 + 4*12 + 4
+shooting = b'MM\x00\x2a\x00\x00\x00\x08' + b'\x00\x01' + entry(0x8769, 4, struct.pack('>I', EXIF_IFD)) + b'\x00\x00\x00\x00'
+shooting += b'\x00\x04' + entry(0x829a, 5, struct.pack('>I', VALUES)) + entry(0x829d, 5, struct.pack('>I', VALUES+8)) + entry(0x8827, 3, struct.pack('>HH', 400, 0)) + entry(0x920a, 5, struct.pack('>I', VALUES+16)) + b'\x00\x00\x00\x00'
+shooting += rational(1, 250) + rational(28, 10) + rational(35, 1)
+exif = b'Exif\x00\x00' + shooting
+app1 = b'\xff\xe1' + struct.pack('>H', len(exif)+2) + exif
+open(f'{out}/patches_with_shooting_data.jpg','wb').write(b'\xff\xd8' + app1 + segments + body[i:])
+subprocess.run(['sips','-s','format','tiff',f'{out}/patches_with_shooting_data.jpg','--out',f'{out}/patches_with_shooting_data.tiff'],check=True,capture_output=True)
+subprocess.run(['sips','-s','format','png',f'{out}/patches_with_shooting_data.jpg','--out',f'{out}/patches_with_shooting_data.png'],check=True,capture_output=True)

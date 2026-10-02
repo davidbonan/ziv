@@ -37,11 +37,8 @@ fn names(paths: &[PathBuf]) -> Vec<String> {
 #[test]
 fn opening_a_folder_gives_its_own_photos_in_natural_order() {
     let folder = shoot_folder();
-    let mut session = Session::default();
 
-    session
-        .open(photo_files_among(&[folder.path().to_owned()], is_photo))
-        .unwrap();
+    let session = Session::of(photo_files_among(&[folder.path().to_owned()], is_photo)).unwrap();
 
     assert_eq!(
         names(session.photos()),

@@ -18,6 +18,7 @@ use crate::photo::domain::thumbnail::Thumbnail;
 use crate::photo::domain::working_image::WorkingImage;
 
 use super::encoded_thumbnail::thumbnail_of_encoded;
+use super::exif_shooting_data::shooting_data_of;
 
 // rawler's own calibration step targets sRGB and clips; ziv converts to the working space itself.
 const STEPS_UP_TO_CAMERA_RGB: [ProcessingStep; 5] = [
@@ -90,6 +91,7 @@ pub fn decode_raw_file(path: &Path) -> Result<DecodedPhoto, DecodeError> {
     Ok(DecodedPhoto {
         image: stored.upright(orientation),
         kind: PhotoKind::Raw { as_shot },
+        shooting_data: shooting_data_of(&metadata.exif),
     })
 }
 

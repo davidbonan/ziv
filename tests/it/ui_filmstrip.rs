@@ -4,14 +4,13 @@ use crate::themed::is_themed;
 use egui::{Key, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use ziv::library::ui::empty_state::OPEN_BUTTON_LABEL;
 use ziv::library::ui::filmstrip::{
-    EXPORT_BUTTON_LABEL, FILMSTRIP_HEIGHT, FilmstripIntent, FilmstripPhoto, ThumbnailState,
-    filmstrip,
+    FILMSTRIP_HEIGHT, FilmstripIntent, FilmstripPhoto, ThumbnailState, filmstrip,
 };
 
 const OTHER_CONTROL: &str = "Another control";
-const NAMES: [&str; 3] = ["DSC1.ARW", "DSC2.ARW", "DSC10.ARW"];
+const EDITED: &str = "DSC1.ARW";
+const NAMES: [&str; 3] = [EDITED, "DSC2.ARW", "DSC10.ARW"];
 
 struct Strip {
     thumbnails: [ThumbnailState; 3],
@@ -40,6 +39,7 @@ fn strip_harness(thumbnails: [ThumbnailState; 3]) -> Harness<'static, Strip> {
                     .map(|(name, thumbnail)| FilmstripPhoto {
                         path: Path::new(name),
                         thumbnail,
+                        is_edited: *name == EDITED,
                     })
                     .collect();
                 ui.add(egui::Slider::new(&mut strip.other_control, 0.0..=1.0).text(OTHER_CONTROL));
@@ -65,12 +65,12 @@ fn all_loading() -> [ThumbnailState; 3] {
 fn every_photo_has_its_place_in_session_order() {
     let harness = strip_harness(all_loading());
 
-    let positions = NAMES.map(|name| {
-        harness
-            .get_by_label(&format!("{name}, loading"))
-            .rect()
-            .left()
-    });
+    let labels = [
+        "DSC1.ARW, loading, edited",
+        "DSC2.ARW, loading",
+        "DSC10.ARW, loading",
+    ];
+    let positions = labels.map(|label| harness.get_by_label(label).rect().left());
     assert!(positions[0] < positions[1] && positions[1] < positions[2]);
 }
 
@@ -87,6 +87,17 @@ fn failed_photo_keeps_its_place_and_is_marked() {
             .query_by_label("DSC2.ARW, could not be opened")
             .is_some()
     );
+}
+
+#[test]
+fn missing_photo_keeps_its_place_and_is_marked() {
+    let harness = strip_harness([
+        ThumbnailState::Loading,
+        ThumbnailState::NotFound,
+        ThumbnailState::Loading,
+    ]);
+
+    assert!(harness.query_by_label("DSC2.ARW, not found").is_some());
 }
 
 #[test]
@@ -129,13 +140,22 @@ fn arrow_keys_ask_for_the_neighbouring_photos() {
 }
 
 #[test]
-fn open_button_asks_to_open_photos() {
+fn strip_starts_with_the_position_of_the_selected_photo() {
     let mut harness = strip_harness(all_loading());
+    assert!(harness.query_by_label("1 / 3").is_some());
 
-    harness.get_by_label(OPEN_BUTTON_LABEL).click();
+    harness.state_mut().selected = Some(2);
     harness.run();
 
-    assert_eq!(harness.state().intent, Some(FilmstripIntent::Open));
+    assert!(harness.query_by_label("3 / 3").is_some());
+}
+
+#[test]
+fn strip_holds_the_photos_and_no_button_of_its_own() {
+    let harness = strip_harness(all_loading());
+
+    let buttons = harness.query_all_by_role(egui::accesskit::Role::Button);
+    assert_eq!(buttons.count(), NAMES.len());
 }
 
 #[test]
@@ -149,14 +169,4 @@ fn arrow_keys_are_left_to_a_focused_control() {
 
     assert_eq!(harness.state().intent, None);
     assert!(harness.state().other_control > 0.0);
-}
-
-#[test]
-fn export_button_asks_to_export() {
-    let mut harness = strip_harness(all_loading());
-
-    harness.get_by_label(EXPORT_BUTTON_LABEL).click();
-    harness.run();
-
-    assert_eq!(harness.state().intent, Some(FilmstripIntent::Export));
 }

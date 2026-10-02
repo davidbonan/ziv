@@ -2,7 +2,7 @@ use egui::accesskit::Role;
 use egui::{Key, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use ziv::design::ui::adjustment_slider::{AdjustmentSlider, TrackScale, value_field_label};
+use ziv::design::ui::adjustment_slider::{AdjustmentSlider, Track, TrackScale, value_field_label};
 
 use crate::themed::is_themed;
 
@@ -13,6 +13,7 @@ const EXPOSURE: AdjustmentSlider = AdjustmentSlider {
     step: 0.1,
     decimals: 2,
     scale: TrackScale::Linear,
+    track: Track::AccentFill,
 };
 
 // Two clicks one frame apart must stay within egui's double-click delay.

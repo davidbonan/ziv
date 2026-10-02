@@ -1,33 +1,67 @@
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::photo::domain::photo_name::photo_name;
 
 use super::natural_order::natural_order;
 
-/// The photos currently open, in display order, and the one being looked at.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// The photos of a series, in display order, and the one being looked at.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     photos: Vec<PathBuf>,
     selected: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NoPhotoFound;
+fn in_display_order(mut photos: Vec<PathBuf>) -> Vec<PathBuf> {
+    photos.sort_by(|left, right| {
+        natural_order(&photo_name(left), &photo_name(right)).then_with(|| left.cmp(right))
+    });
+    photos.dedup();
+    photos
+}
 
 impl Session {
-    /// Replaces the open photos by `photos`, sorted by file name, the first one
-    /// selected. Nothing changes when `photos` is empty.
-    pub fn open(&mut self, mut photos: Vec<PathBuf>) -> Result<(), NoPhotoFound> {
-        if photos.is_empty() {
-            return Err(NoPhotoFound);
+    /// `photos` sorted by file name, the first one selected. `None` when there is no photo.
+    pub fn of(photos: Vec<PathBuf>) -> Option<Self> {
+        (!photos.is_empty()).then(|| Self {
+            photos: in_display_order(photos),
+            selected: Some(0),
+        })
+    }
+
+    /// Brings in the photos of `photos` that are not there yet; the selected photo stays selected.
+    pub fn add(&mut self, photos: Vec<PathBuf>) {
+        let selected = self.selected_photo().map(Path::to_owned);
+        let mut all = std::mem::take(&mut self.photos);
+        all.extend(photos);
+        self.photos = in_display_order(all);
+        self.selected = selected.and_then(|photo| self.index_of(&photo));
+    }
+
+    /// Points every photo whose file name `is_there` in `folder` to that
+    /// folder; the selected photo stays selected. Returns how many were found.
+    pub fn relocate(&mut self, folder: &Path, is_there: impl Fn(&Path) -> bool) -> usize {
+        let selected = self.selected;
+        let mut found = 0;
+        let mut selected_photo = None;
+        for (index, photo) in self.photos.iter_mut().enumerate() {
+            let there = folder.join(photo.file_name().unwrap_or_default());
+            if is_there(&there) {
+                *photo = there;
+                found += 1;
+            }
+            if selected == Some(index) {
+                selected_photo = Some(photo.clone());
+            }
         }
-        photos.sort_by(|left, right| {
-            natural_order(&photo_name(left), &photo_name(right)).then_with(|| left.cmp(right))
-        });
-        photos.dedup();
-        self.photos = photos;
-        self.selected = Some(0);
-        Ok(())
+        self.photos = in_display_order(std::mem::take(&mut self.photos));
+        self.selected = selected_photo.and_then(|photo| self.index_of(&photo));
+        found
+    }
+
+    pub fn is_selection_inside(&self) -> bool {
+        self.selected.is_none_or(|index| index < self.photos.len())
     }
 
     pub fn photos(&self) -> &[PathBuf] {
@@ -77,12 +111,8 @@ mod tests {
     }
 
     #[test]
-    fn opened_photos_are_in_natural_name_order_with_the_first_selected() {
-        let mut session = Session::default();
-
-        session
-            .open(paths(&["/b/DSC10.ARW", "/a/dsc2.arw", "/b/DSC1.ARW"]))
-            .unwrap();
+    fn photos_are_in_natural_name_order_with_the_first_selected() {
+        let session = Session::of(paths(&["/b/DSC10.ARW", "/a/dsc2.arw", "/b/DSC1.ARW"])).unwrap();
 
         assert_eq!(
             session.photos(),
@@ -92,46 +122,48 @@ mod tests {
     }
 
     #[test]
-    fn opening_replaces_the_previous_photos() {
-        let mut session = Session::default();
-        session.open(paths(&["/old/a.jpg", "/old/b.jpg"])).unwrap();
-
-        session.open(paths(&["/new/c.jpg"])).unwrap();
-
-        assert_eq!(session.photos(), paths(&["/new/c.jpg"]));
+    fn no_photo_makes_no_session() {
+        assert_eq!(Session::of(Vec::new()), None);
     }
 
     #[test]
-    fn opening_nothing_keeps_the_session_as_it_was() {
-        let mut session = Session::default();
-        session.open(paths(&["/old/a.jpg"])).unwrap();
-
-        let outcome = session.open(Vec::new());
-
-        assert_eq!(outcome, Err(NoPhotoFound));
-        assert_eq!(session.selected_photo(), Some(Path::new("/old/a.jpg")));
-    }
-
-    #[test]
-    fn the_same_file_given_twice_is_opened_once() {
-        let mut session = Session::default();
-
-        session.open(paths(&["/a/x.jpg", "/a/x.jpg"])).unwrap();
+    fn the_same_file_given_twice_is_there_once() {
+        let session = Session::of(paths(&["/a/x.jpg", "/a/x.jpg"])).unwrap();
 
         assert_eq!(session.photos().len(), 1);
     }
 
     #[test]
-    fn empty_session_has_no_selected_photo() {
-        assert_eq!(Session::default().selected_photo(), None);
+    fn added_photos_take_their_place_and_the_selected_photo_stays_selected() {
+        let mut session = Session::of(paths(&["/p/2.jpg", "/p/3.jpg"])).unwrap();
+        session.select(1);
+
+        session.add(paths(&["/p/1.jpg", "/p/3.jpg", "/p/4.jpg"]));
+
+        assert_eq!(
+            session.photos(),
+            paths(&["/p/1.jpg", "/p/2.jpg", "/p/3.jpg", "/p/4.jpg"])
+        );
+        assert_eq!(session.selected_photo(), Some(Path::new("/p/3.jpg")));
+    }
+
+    #[test]
+    fn relocation_moves_the_photos_found_and_leaves_the_others() {
+        let mut session = Session::of(paths(&["/old/1.jpg", "/old/2.jpg", "/old/3.jpg"])).unwrap();
+        session.select(2);
+
+        let found = session.relocate(Path::new("/new"), |photo| photo != Path::new("/new/2.jpg"));
+
+        assert_eq!(found, 2);
+        assert_eq!(
+            session.photos(),
+            paths(&["/new/1.jpg", "/old/2.jpg", "/new/3.jpg"])
+        );
+        assert_eq!(session.selected_photo(), Some(Path::new("/new/3.jpg")));
     }
 
     fn three_photos() -> Session {
-        let mut session = Session::default();
-        session
-            .open(paths(&["/p/1.jpg", "/p/2.jpg", "/p/3.jpg"]))
-            .unwrap();
-        session
+        Session::of(paths(&["/p/1.jpg", "/p/2.jpg", "/p/3.jpg"])).unwrap()
     }
 
     #[test]

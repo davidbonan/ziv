@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 base64 = "0.23"
 bytemuck = "1"
+# Already built for rawler; here for the local calendar day only (ADR 0011).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # No accesskit: on macOS the first AX query makes egui rebuild the full
 # accessibility tree every frame for the life of the process.
 dirs = "6"

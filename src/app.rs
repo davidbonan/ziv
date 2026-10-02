@@ -12,7 +12,7 @@ use crate::develop::domain::development::Development;
 use crate::develop::domain::edit::{Edit, FULL_INTENSITY};
 use crate::develop::domain::mask::{Mask, MaskShape};
 use crate::develop::domain::zone::ZoneMask;
-use crate::develop::infrastructure::sidecar_files::SidecarFiles;
+use crate::develop::infrastructure::sidecar_files::{SidecarFiles, has_sidecar};
 use crate::develop::ui::before_badge::before_badge;
 use crate::develop::ui::develop_panel::{
     DevelopPanelState, develop_panel, edits_left_alone_warning,
@@ -33,12 +33,26 @@ use crate::export::infrastructure::destination_picker::pick_destination;
 use crate::export::infrastructure::photo_export::export_photo;
 use crate::export::ui::export_dialog::{ExportDialogIntent, export_dialog};
 use crate::export::ui::export_progress::{export_progress, export_summary};
-use crate::library::domain::session::Session;
-use crate::library::infrastructure::photo_files::photo_files_among;
-use crate::library::infrastructure::photo_picker::pick_photos_or_folder;
+use crate::histogram::infrastructure::developed_histogram::DevelopedHistogram;
+use crate::histogram::ui::histogram_plot::histogram_plot;
+use crate::library::application::stored_catalog::StoredCatalog;
+use crate::library::domain::catalog::Catalog;
+use crate::library::domain::series::Series;
+use crate::library::infrastructure::catalog_file::CatalogFile;
+use crate::library::infrastructure::photo_files::import_of;
+use crate::library::infrastructure::photo_picker::{
+    pick_photos_or_folder, pick_series_folder, show_in_finder,
+};
+use crate::library::infrastructure::series_covers::SeriesCovers;
+use crate::library::infrastructure::thumbnail_texture::thumbnail_texture;
+use crate::library::infrastructure::today::today;
 use crate::library::ui::empty_state::empty_state;
 use crate::library::ui::filmstrip::{
     FILMSTRIP_HEIGHT, FilmstripIntent, FilmstripPhoto, ThumbnailState, filmstrip,
+};
+use crate::library::ui::series_sidebar::{
+    SERIES_SIDEBAR_WIDTH, SeriesRow, SeriesShown, SidebarIntent, series_sidebar,
+    unusable_catalog_warning,
 };
 use crate::models::application::model_store::ModelStore;
 use crate::models::infrastructure::model_downloads::ModelDownloads;
@@ -48,9 +62,14 @@ use crate::photo::application::photo_loader::{Backlog, LoadedPhoto, PhotoLoader}
 use crate::photo::domain::decode_error::DecodeError;
 use crate::photo::domain::photo_kind::PhotoKind;
 use crate::photo::domain::photo_name::photo_name;
+use crate::photo::domain::shooting_data::ShootingData;
 use crate::photo::domain::thumbnail::Thumbnail;
 use crate::photo::infrastructure::file_decoder::FileDecoder;
+use crate::photo::infrastructure::thumbnail_cache::ThumbnailCache;
+use crate::photo::ui::shooting_data_line::shooting_data_line;
+use crate::shell::ui::top_bar::{TOP_BAR_HEIGHT, TopBarIntent, TopBarShown, top_bar};
 use crate::viewport::domain::view::View;
+use crate::viewport::domain::zoom_readout::zoom_readout;
 use crate::viewport::infrastructure::photo_presenter::{
     PhotoPresenter, PresentedPhoto, ShownPhoto,
 };
@@ -68,10 +87,14 @@ use crate::zones::ui::people_picker::{PeoplePickerIntent, people_picker, person_
 
 const APP_NAME: &str = "Ziv";
 const NO_PHOTO_FOUND_NOTICE: &str = "No photo found in what was opened";
+const NOTHING_LOCATED_NOTICE: &str = "None of the photos of this series is in that folder";
+const PHOTO_NOT_FOUND_REASON: &str = "not found";
 const NO_MODELS_FOLDER_NOTICE: &str = "Models cannot be kept on this Mac: no data folder";
-const DEVELOP_PANEL_WIDTH: f32 = 280.0;
+const DEVELOP_PANEL_WIDTH: f32 = 300.0;
 const OPEN_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 const EXPORT_SETTINGS_KEY: &str = "export settings";
+const SIDEBAR_SHOWN_KEY: &str = "series sidebar shown";
+const SIDEBAR_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::L);
 const EXPORT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
 const EXPORT_SESSION_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E);
@@ -90,6 +113,8 @@ enum ViewedPhoto {
     Ready {
         photo: Box<PresentedPhoto>,
         kind: PhotoKind,
+        shooting_data: ShootingData,
+        histogram: DevelopedHistogram,
         view: View,
     },
     Failed {
@@ -113,6 +138,7 @@ struct PhotoEnhancement {
 struct UploadedPhoto {
     source: SourceTexture,
     kind: PhotoKind,
+    shooting_data: ShootingData,
 }
 
 fn upload_decoded(engine: &Engine, path: &Path) -> Result<UploadedPhoto, DecodeError> {
@@ -120,6 +146,7 @@ fn upload_decoded(engine: &Engine, path: &Path) -> Result<UploadedPhoto, DecodeE
     Ok(UploadedPhoto {
         source: upload_with_enhancement(engine, path, &decoded.image),
         kind: decoded.kind,
+        shooting_data: decoded.shooting_data,
     })
 }
 
@@ -128,9 +155,22 @@ pub struct ZivApp {
     presenter: PhotoPresenter,
     viewed_loader: PhotoLoader<UploadedPhoto>,
     thumbnail_loader: PhotoLoader<Thumbnail>,
-    session: Session,
-    /// One per photo of the session, in the same order.
+    thumbnail_cache: ThumbnailCache,
+    covers: SeriesCovers,
+    catalog: StoredCatalog<CatalogFile>,
+    /// Why the series of this run will be forgotten, when what is stored cannot be used.
+    catalog_warning: Option<String>,
+    /// One per photo of the open series, in the same order.
     thumbnails: Vec<ThumbnailState>,
+    is_sidebar_shown: bool,
+    /// One per series of the catalog, in the same order.
+    series_on_disk: Vec<SeriesOnDisk>,
+    /// Whether each photo of the open series is edited, in the same order.
+    edited_marks: Vec<bool>,
+    /// The zoom the viewport showed the photo at, at the last frame.
+    zoom_readout: Option<String>,
+    /// An edit was waiting to be saved at the last frame.
+    was_edit_unsaved: bool,
     viewed: ViewedPhoto,
     edits: SessionEdits<SidecarFiles>,
     notice: Option<Notice>,
@@ -149,6 +189,21 @@ pub struct ZivApp {
     enhancement: Option<PhotoEnhancement>,
 }
 
+/// What the files of a series say about it.
+struct SeriesOnDisk {
+    edited_count: usize,
+    is_missing: bool,
+}
+
+impl SeriesOnDisk {
+    fn of(series: &Series) -> Self {
+        Self {
+            edited_count: series.edited_count(has_sidecar),
+            is_missing: series.is_missing(Path::exists),
+        }
+    }
+}
+
 fn detection_failure_notice(error: &DetectionError) -> String {
     format!("Nothing was detected: {error}")
 }
@@ -157,17 +212,40 @@ fn panel_frame(margin: f32) -> egui::Frame {
     egui::Frame::new().fill(color::PANEL).inner_margin(margin)
 }
 
-fn spawn_thumbnail_loader(egui_context: &egui::Context) -> PhotoLoader<Thumbnail> {
+fn thumbnail_through(cache: &ThumbnailCache, photo: &Path) -> Result<Thumbnail, DecodeError> {
+    cache.thumbnail_of(photo, |photo| FileDecoder.decode_thumbnail(photo))
+}
+
+fn spawn_thumbnail_loader(
+    egui_context: &egui::Context,
+    cache: &ThumbnailCache,
+) -> PhotoLoader<Thumbnail> {
     let egui_context = egui_context.clone();
+    let cache = cache.clone();
     PhotoLoader::spawn(
         Backlog::LoadAll,
-        |path| FileDecoder.decode_thumbnail(path),
+        move |photo| thumbnail_through(&cache, photo),
         move || egui_context.request_repaint(),
     )
 }
 
 impl ZivApp {
     pub fn new(creation: &eframe::CreationContext<'_>) -> Self {
+        let catalog_file = CatalogFile::of_this_mac();
+        Self::keeping(creation, catalog_file, ThumbnailCache::of_this_mac())
+    }
+
+    /// The app keeping what it remembers in `folder` instead of this Mac's data folder.
+    pub fn keeping_data_in(creation: &eframe::CreationContext<'_>, folder: PathBuf) -> Self {
+        let thumbnail_cache = ThumbnailCache::in_folder(folder.join("thumbnails"));
+        Self::keeping(creation, CatalogFile::in_folder(folder), thumbnail_cache)
+    }
+
+    fn keeping(
+        creation: &eframe::CreationContext<'_>,
+        catalog_file: CatalogFile,
+        thumbnail_cache: ThumbnailCache,
+    ) -> Self {
         let render_state = creation
             .wgpu_render_state
             .as_ref()
@@ -184,7 +262,14 @@ impl ZivApp {
             .storage
             .and_then(|storage| eframe::get_value(storage, EXPORT_SETTINGS_KEY))
             .unwrap_or_default();
-        Self {
+        let is_sidebar_shown = creation
+            .storage
+            .and_then(|storage| eframe::get_value(storage, SIDEBAR_SHOWN_KEY))
+            .unwrap_or(true);
+        let catalog_path = catalog_file.path();
+        let catalog = StoredCatalog::read_from(catalog_file);
+        let mut app = Self {
+            is_sidebar_shown,
             presenter: PhotoPresenter::new(render_state, engine.clone()),
             engine,
             export_settings,
@@ -198,24 +283,37 @@ impl ZivApp {
                 move |path| upload_decoded(&uploading_engine, path),
                 move || repainting_context.request_repaint(),
             ),
-            thumbnail_loader: spawn_thumbnail_loader(&egui_context),
+            thumbnail_loader: spawn_thumbnail_loader(&egui_context, &thumbnail_cache),
+            covers: SeriesCovers::spawn(&egui_context, {
+                let cache = thumbnail_cache.clone();
+                move |photo| thumbnail_through(&cache, photo)
+            }),
+            thumbnail_cache,
             egui_context,
-            session: Session::default(),
+            catalog_warning: catalog
+                .unusable_storage()
+                .map(|reason| unusable_catalog_warning(catalog_path.as_deref(), reason)),
+            catalog,
             thumbnails: Vec::new(),
+            series_on_disk: Vec::new(),
+            edited_marks: Vec::new(),
+            zoom_readout: None,
+            was_edit_unsaved: false,
             viewed: ViewedPhoto::None,
             edits: SessionEdits::new(SidecarFiles),
             notice: None,
             is_before_shown: false,
             mask_selection: MaskSelection::default(),
             copied_edit: None,
-        }
+        };
+        app.show_open_series();
+        app
     }
 
-    /// The app as if the user had just opened `paths` (files or folders).
-    pub fn opening(creation: &eframe::CreationContext<'_>, paths: &[PathBuf]) -> Self {
-        let mut app = Self::new(creation);
-        app.open(paths);
-        app
+    /// The app as if the user had then opened `paths` (files or folders).
+    pub fn opening(mut self, paths: &[PathBuf]) -> Self {
+        self.open(paths);
+        self
     }
 
     /// The app as if the user had already chosen where exports go.
@@ -225,34 +323,54 @@ impl ZivApp {
     }
 
     fn open(&mut self, paths: &[PathBuf]) {
-        let photos = photo_files_among(paths, |path| FileDecoder.supports(path));
-        if self.session.open(photos).is_err() {
-            self.show_notice(NO_PHOTO_FOUND_NOTICE);
-            return;
-        }
+        let import = import_of(paths, |path| FileDecoder.supports(path));
+        let Some(series) = Series::imported(import, today()) else {
+            return self.show_notice(NO_PHOTO_FOUND_NOTICE);
+        };
         self.notice = None;
+        self.change_catalog(|catalog| catalog.import(series));
+        self.show_open_series();
+    }
+
+    fn change_catalog(&mut self, change: impl FnOnce(&mut Catalog)) {
+        if let Some(reason) = self.catalog.change(change) {
+            self.show_notice(format!("The catalog could not be saved: {reason}"));
+        }
+    }
+
+    fn show_open_series(&mut self) {
         let failure = self.edits.close_session();
         self.report(failure);
+        self.look_at_series_on_disk();
         self.request_thumbnails();
         self.view_selected_photo();
     }
 
+    fn look_at_series_on_disk(&mut self) {
+        let series = self.catalog.current().series().iter();
+        self.series_on_disk = series.map(SeriesOnDisk::of).collect();
+        let photos = self.catalog.current().photos().iter();
+        self.edited_marks = photos.map(|photo| has_sidecar(photo)).collect();
+        self.covers.request_those_of(self.catalog.current());
+    }
+
     fn request_thumbnails(&mut self) {
         // A new loader: the previous one stops instead of finishing the old session's thumbnails.
-        self.thumbnail_loader = spawn_thumbnail_loader(&self.egui_context);
-        self.thumbnails = self
-            .session
-            .photos()
-            .iter()
-            .map(|path| {
-                self.thumbnail_loader.request(path.clone());
-                ThumbnailState::Loading
-            })
-            .collect();
+        self.thumbnail_loader = spawn_thumbnail_loader(&self.egui_context, &self.thumbnail_cache);
+        let photos = self.catalog.current().photos();
+        let requested = photos.iter().map(|photo| {
+            if !photo.exists() {
+                return ThumbnailState::NotFound;
+            }
+            self.thumbnail_loader.request(photo.clone());
+            ThumbnailState::Loading
+        });
+        self.thumbnails = requested.collect();
     }
 
     fn view_selected_photo(&mut self) {
-        let Some(path) = self.session.selected_photo() else {
+        let Some(path) = self.catalog.current().selected_photo() else {
+            self.viewed = ViewedPhoto::None;
             return;
         };
         self.is_before_shown = false;
@@ -260,6 +378,13 @@ impl ZivApp {
         self.zone_detection = None;
         self.people_pick = None;
         self.edits.load(path);
+        if !path.exists() {
+            self.viewed = ViewedPhoto::Failed {
+                path: path.to_owned(),
+                error: DecodeError::new(PHOTO_NOT_FOUND_REASON),
+            };
+            return;
+        }
         self.viewed_loader.request(path.to_owned());
         self.viewed = ViewedPhoto::Loading(path.to_owned());
     }
@@ -276,6 +401,8 @@ impl ZivApp {
                 Ok(uploaded) => ViewedPhoto::Ready {
                     photo: Box::new(self.presenter.present(uploaded.source)),
                     kind: uploaded.kind,
+                    shooting_data: uploaded.shooting_data,
+                    histogram: DevelopedHistogram::default(),
                     view: View::fit(),
                 },
                 Err(error) => {
@@ -290,28 +417,23 @@ impl ZivApp {
     }
 
     fn mark_thumbnail_failed(&mut self, path: &Path) {
-        if let Some(index) = self.session.index_of(path) {
+        if let Some(index) = self.catalog.current().index_of(path) {
             self.thumbnails[index] = ThumbnailState::Failed;
         }
     }
 
     fn receive_thumbnails(&mut self) {
         for LoadedPhoto { path, result } in self.thumbnail_loader.take_loaded() {
-            let Some(index) = self.session.index_of(&path) else {
+            let Some(index) = self.catalog.current().index_of(&path) else {
                 continue;
             };
             self.thumbnails[index] = match result {
-                Ok(thumbnail) => ThumbnailState::Ready(self.thumbnail_texture(&path, &thumbnail)),
+                Ok(thumbnail) => {
+                    ThumbnailState::Ready(thumbnail_texture(&self.egui_context, &path, &thumbnail))
+                }
                 Err(_) => ThumbnailState::Failed,
             };
         }
-    }
-
-    fn thumbnail_texture(&self, path: &Path, thumbnail: &Thumbnail) -> egui::TextureHandle {
-        let size = [thumbnail.width as usize, thumbnail.height as usize];
-        let image = egui::ColorImage::from_rgba_unmultiplied(size, &thumbnail.rgba);
-        self.egui_context
-            .load_texture(photo_name(path), image, egui::TextureOptions::LINEAR)
     }
 
     fn open_dropped_files(&mut self, ui: &egui::Ui) {
@@ -344,9 +466,14 @@ impl ZivApp {
         let now = ui.input(|input| input.time);
         let failure = self.edits.save_when_due(now);
         self.report(failure);
-        if let Some(seconds) = self.edits.seconds_until_save(now) {
+        let until_save = self.edits.seconds_until_save(now);
+        if let Some(seconds) = until_save {
             ui.ctx().request_repaint_after_secs(seconds as f32);
         }
+        if self.was_edit_unsaved && until_save.is_none() {
+            self.look_at_series_on_disk();
+        }
+        self.was_edit_unsaved = until_save.is_some();
     }
 
     fn notice_over(&mut self, ui: &egui::Ui) {
@@ -367,27 +494,90 @@ impl ZivApp {
     }
 
     fn apply(&mut self, intent: FilmstripIntent) {
-        let previously_selected = self.session.selected_index();
+        let previously_selected = self.catalog.current().selected_index();
         match intent {
-            FilmstripIntent::Select(index) => self.session.select(index),
-            FilmstripIntent::SelectPrevious => self.session.select_previous(),
-            FilmstripIntent::SelectNext => self.session.select_next(),
-            FilmstripIntent::Open => return self.open_picked_photos(),
-            FilmstripIntent::Export => return self.ask_to_export_selected_photo(),
+            FilmstripIntent::Select(index) => self.change_catalog(|catalog| catalog.select(index)),
+            FilmstripIntent::SelectPrevious => self.change_catalog(Catalog::select_previous),
+            FilmstripIntent::SelectNext => self.change_catalog(Catalog::select_next),
         }
-        if self.session.selected_index() != previously_selected {
+        if self.catalog.current().selected_index() != previously_selected {
             self.view_selected_photo();
         }
     }
 
+    fn apply_to_window(&mut self, intent: TopBarIntent) {
+        match intent {
+            TopBarIntent::ToggleSidebar => self.is_sidebar_shown = !self.is_sidebar_shown,
+            TopBarIntent::ToggleBefore => self.is_before_shown = !self.is_before_shown,
+            TopBarIntent::Export => self.ask_to_export_selected_photo(),
+        }
+    }
+
+    fn apply_to_series(&mut self, intent: SidebarIntent) {
+        match intent {
+            SidebarIntent::Import => self.open_picked_photos(),
+            SidebarIntent::Open(index) => self.open_series(index),
+            SidebarIntent::Rename { index, name } => {
+                self.change_catalog(|catalog| catalog.rename(index, &name));
+            }
+            SidebarIntent::ShowInFinder(index) => self.show_series_in_finder(index),
+            SidebarIntent::Locate(index) => {
+                if let Some(folder) = pick_series_folder() {
+                    self.relocate_series(index, &folder);
+                }
+            }
+            SidebarIntent::Remove(index) => self.remove_series(index),
+        }
+    }
+
+    fn show_series_in_finder(&mut self, index: usize) {
+        let series = self.catalog.current().series().get(index);
+        let Some(folder) = series.and_then(Series::folder_to_show) else {
+            return;
+        };
+        if let Err(reason) = show_in_finder(folder) {
+            self.show_notice(format!("The Finder could not be opened: {reason}"));
+        }
+    }
+
+    fn relocate_series(&mut self, index: usize, folder: &Path) {
+        let mut found = 0;
+        self.change_catalog(|catalog| found = catalog.relocate(index, folder, Path::exists));
+        if found == 0 {
+            return self.show_notice(NOTHING_LOCATED_NOTICE);
+        }
+        match self.catalog.current().open_index() == Some(index) {
+            true => self.show_open_series(),
+            false => self.look_at_series_on_disk(),
+        }
+    }
+
+    fn remove_series(&mut self, index: usize) {
+        let was_open = self.catalog.current().open_index() == Some(index);
+        self.change_catalog(|catalog| catalog.remove(index));
+        match was_open {
+            true => self.show_open_series(),
+            false => self.look_at_series_on_disk(),
+        }
+    }
+
+    fn open_series(&mut self, index: usize) {
+        let previously_open = self.catalog.current().open_index();
+        self.change_catalog(|catalog| catalog.open(index));
+        if self.catalog.current().open_index() != previously_open {
+            self.show_open_series();
+        }
+    }
+
     fn selected_edit(&self) -> Edit {
-        self.session
+        self.catalog
+            .current()
             .selected_photo()
             .map_or_else(Edit::default, |path| self.edits.edit_of(path))
     }
 
     fn set_selected_edit(&mut self, edit: Edit) {
-        let Some(path) = self.session.selected_photo() else {
+        let Some(path) = self.catalog.current().selected_photo() else {
             return;
         };
         let now = self.egui_context.input(|input| input.time);
@@ -397,7 +587,7 @@ impl ZivApp {
 
     /// Undo and redo of the selected photo's edit; a typed value keeps its own.
     fn undo_or_redo(&mut self, ui: &egui::Ui) {
-        let Some(path) = self.session.selected_photo() else {
+        let Some(path) = self.catalog.current().selected_photo() else {
             return;
         };
         let is_pointer_down = ui.input(|input| input.pointer.any_down());
@@ -423,26 +613,33 @@ impl ZivApp {
         }
     }
 
-    fn copy_or_paste_edit(&mut self, ui: &egui::Ui) {
-        let ViewedPhoto::Ready { kind, .. } = &self.viewed else {
-            return;
-        };
-        let kind = *kind;
+    fn copy_or_paste_edit_on_shortcut(&mut self, ui: &egui::Ui) {
         if ui.input_mut(|input| input.consume_shortcut(&COPY_EDIT_SHORTCUT)) {
-            self.copied_edit = Some(CopiedEdit::of(self.selected_edit(), &kind));
+            self.copy_edit();
         }
-        if !ui.input_mut(|input| input.consume_shortcut(&PASTE_EDIT_SHORTCUT)) {
-            return;
-        }
-        if let Some(copied) = &self.copied_edit {
-            let pasted = copied.pasted_onto(&self.selected_edit(), &kind);
-            self.is_before_shown = false;
-            self.set_selected_edit(pasted);
+        if ui.input_mut(|input| input.consume_shortcut(&PASTE_EDIT_SHORTCUT)) {
+            self.paste_edit();
         }
     }
 
+    fn copy_edit(&mut self) {
+        if let ViewedPhoto::Ready { kind, .. } = &self.viewed {
+            self.copied_edit = Some(CopiedEdit::of(self.selected_edit(), kind));
+        }
+    }
+
+    fn paste_edit(&mut self) {
+        let (ViewedPhoto::Ready { kind, .. }, Some(copied)) = (&self.viewed, &self.copied_edit)
+        else {
+            return;
+        };
+        let pasted = copied.pasted_onto(&self.selected_edit(), kind);
+        self.is_before_shown = false;
+        self.set_selected_edit(pasted);
+    }
+
     fn ask_to_export_selected_photo(&mut self) {
-        let selected = self.session.selected_photo().map(Path::to_owned);
+        let selected = self.catalog.current().selected_photo().map(Path::to_owned);
         self.ask_to_export(selected.into_iter().collect());
     }
 
@@ -455,7 +652,7 @@ impl ZivApp {
 
     fn ask_to_export_on_shortcut(&mut self, ui: &egui::Ui) {
         if ui.input_mut(|input| input.consume_shortcut(&EXPORT_SESSION_SHORTCUT)) {
-            self.ask_to_export(self.session.photos().to_vec());
+            self.ask_to_export(self.catalog.current().photos().to_vec());
         }
         if ui.input_mut(|input| input.consume_shortcut(&EXPORT_SHORTCUT)) {
             self.ask_to_export_selected_photo();
@@ -648,7 +845,7 @@ impl ZivApp {
     /// onto the photo on screen when that photo is still the one viewed.
     fn start_enhancement(&mut self) {
         let (ViewedPhoto::Ready { photo: viewed, .. }, Some(photo)) =
-            (&self.viewed, self.session.selected_photo())
+            (&self.viewed, self.catalog.current().selected_photo())
         else {
             return;
         };
@@ -709,7 +906,7 @@ impl ZivApp {
         let failure = self.edits.change(photo, enhanced, now);
         self.report(failure);
         // Viewed again since Enhance was asked: what is on screen was loaded before the file was there.
-        let is_selected = self.session.selected_photo() == Some(photo);
+        let is_selected = self.catalog.current().selected_photo() == Some(photo);
         if is_selected && !self.is_viewed_photo_enhanced() {
             self.view_selected_photo();
         }
@@ -735,18 +932,26 @@ impl ZivApp {
 
     fn edits_left_alone_reason(&self) -> Option<&str> {
         self.edits
-            .unusable_storage_of(self.session.selected_photo()?)
+            .unusable_storage_of(self.catalog.current().selected_photo()?)
     }
 
     /// Shows the panel, disabled until the photo is ready, and returns how
     /// that photo is to be shown.
     fn develop_side_panel(&mut self, ui: &mut egui::Ui) -> ShownPhoto {
-        if self.session.photos().is_empty() {
+        if self.catalog.current().photos().is_empty() {
             return ShownPhoto::default();
         }
         let ready_kind = match &self.viewed {
             ViewedPhoto::Ready { kind, .. } => Some(*kind),
             _ => None,
+        };
+        let (histogram, shooting_data) = match &self.viewed {
+            ViewedPhoto::Ready {
+                histogram,
+                shooting_data,
+                ..
+            } => (histogram.latest(), *shooting_data),
+            _ => (None, ShootingData::default()),
         };
         let kind = ready_kind.unwrap_or(PhotoKind::StandardImage);
         let selected = self.selected_edit();
@@ -754,6 +959,8 @@ impl ZivApp {
             .exact_size(DEVELOP_PANEL_WIDTH)
             .frame(panel_frame(space::L))
             .show(ui, |ui| {
+                histogram_plot(ui, histogram);
+                shooting_data_line(ui, &shooting_data);
                 let left_alone = self.edits_left_alone_reason();
                 if ready_kind.is_none() || left_alone.is_some() {
                     ui.disable();
@@ -767,6 +974,9 @@ impl ZivApp {
                     is_enhanced: self.is_viewed_photo_enhanced(),
                     is_enhancing: self.enhancement.is_some(),
                     is_enhancement_asked: false,
+                    can_paste: self.copied_edit.is_some(),
+                    is_copy_asked: false,
+                    is_paste_asked: false,
                 };
                 let left = develop_panel(ui, &kind, shown);
                 if let Some(reason) = left_alone {
@@ -785,6 +995,12 @@ impl ZivApp {
         }
         if left.is_enhancement_asked {
             self.start_enhancement();
+        }
+        if left.is_copy_asked {
+            self.copy_edit();
+        }
+        if left.is_paste_asked {
+            self.paste_edit();
         }
         if self.is_before_shown {
             let development = Development {
@@ -805,19 +1021,86 @@ impl ZivApp {
         }
     }
 
+    /// Counts the histogram of the photo as it is shown; the panel draws it at the next frame.
+    fn follow_histogram(&mut self, shown: &ShownPhoto) {
+        let ViewedPhoto::Ready {
+            photo, histogram, ..
+        } = &mut self.viewed
+        else {
+            return;
+        };
+        if histogram.follow(&self.engine, photo.source(), &shown.development) {
+            self.egui_context.request_repaint();
+        }
+    }
+
+    fn series_side_panel(&self, ui: &mut egui::Ui) -> Option<SidebarIntent> {
+        let catalog = self.catalog.current();
+        let rows: Vec<SeriesRow<'_>> = catalog
+            .series()
+            .iter()
+            .zip(&self.series_on_disk)
+            .map(|(series, on_disk)| SeriesRow {
+                name: &series.name,
+                photo_count: series.session.photos().len(),
+                edited_count: on_disk.edited_count,
+                is_missing: on_disk.is_missing,
+                imported_on: series.imported_on,
+                cover: self.covers.cover_of(series),
+            })
+            .collect();
+        egui::Panel::left("series")
+            .exact_size(SERIES_SIDEBAR_WIDTH)
+            .frame(panel_frame(space::S))
+            .show(ui, |ui| {
+                let shown = SeriesShown {
+                    rows: &rows,
+                    open: catalog.open_index(),
+                    warning: self.catalog_warning.as_deref(),
+                };
+                series_sidebar(ui, &shown)
+            })
+            .inner
+    }
+
+    fn top_bar_panel(&self, ui: &mut egui::Ui) -> Option<TopBarIntent> {
+        let catalog = self.catalog.current();
+        let photo_name = catalog.selected_photo().map(photo_name);
+        let shown = TopBarShown {
+            is_sidebar_shown: self.is_sidebar_shown,
+            series_name: catalog.open_series().map(|series| series.name.as_str()),
+            photo_name: photo_name.as_deref(),
+            zoom_readout: self.zoom_readout.as_deref(),
+            is_before_shown: self.is_before_shown,
+            can_before_be_shown: matches!(self.viewed, ViewedPhoto::Ready { .. }),
+            can_export: catalog.selected_photo().is_some(),
+        };
+        egui::Panel::top("top bar")
+            .exact_size(TOP_BAR_HEIGHT)
+            .frame(panel_frame(space::S))
+            .show(ui, |ui| top_bar(ui, &shown))
+            .inner
+    }
+
     fn filmstrip_panel(&self, ui: &mut egui::Ui) -> Option<FilmstripIntent> {
         let photos: Vec<FilmstripPhoto<'_>> = self
-            .session
+            .catalog
+            .current()
             .photos()
             .iter()
             .zip(&self.thumbnails)
-            .map(|(path, thumbnail)| FilmstripPhoto { path, thumbnail })
+            .zip(&self.edited_marks)
+            .map(|((path, thumbnail), is_edited)| FilmstripPhoto {
+                path,
+                thumbnail,
+                is_edited: *is_edited,
+            })
             .collect();
         egui::Panel::bottom("filmstrip")
             .exact_size(FILMSTRIP_HEIGHT)
             .frame(panel_frame(space::M))
             .show(ui, |ui| {
-                filmstrip(ui, &photos, self.session.selected_index())
+                filmstrip(ui, &photos, self.catalog.current().selected_index())
             })
             .inner
     }
@@ -827,6 +1110,7 @@ impl eframe::App for ZivApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.receive_viewed_photo();
         self.receive_thumbnails();
+        self.covers.receive_loaded();
         self.receive_detection();
         self.receive_enhancement();
         self.open_dropped_files(ui);
@@ -834,18 +1118,28 @@ impl eframe::App for ZivApp {
         if !is_dialog_open {
             self.undo_or_redo(ui);
             self.toggle_before_on_its_key(ui);
-            self.copy_or_paste_edit(ui);
+            self.copy_or_paste_edit_on_shortcut(ui);
             self.ask_to_export_on_shortcut(ui);
         }
         self.save_settled_edits(ui);
         let mut open_requested = ui.input_mut(|input| input.consume_shortcut(&OPEN_SHORTCUT));
+        if ui.input_mut(|input| input.consume_shortcut(&SIDEBAR_SHORTCUT)) {
+            self.is_sidebar_shown = !self.is_sidebar_shown;
+        }
 
-        let filmstrip_intent = if self.session.photos().is_empty() {
+        let window_intent = self.top_bar_panel(ui);
+        let sidebar_intent = match self.is_sidebar_shown {
+            true => self.series_side_panel(ui),
+            false => None,
+        };
+        let shown = self.develop_side_panel(ui);
+        self.follow_histogram(&shown);
+        let filmstrip_intent = if self.catalog.current().photos().is_empty() {
             None
         } else {
             self.filmstrip_panel(ui)
         };
-        let shown = self.develop_side_panel(ui);
+        let mut zoom_shown = None;
         let mut masks_on_screen = None;
         let canvas = egui::Frame::new().fill(color::CANVAS);
         egui::CentralPanel::default().frame(canvas).show(ui, |ui| {
@@ -861,6 +1155,7 @@ impl eframe::App for ZivApp {
                         self.presenter.render_at(photo, placement, &shown)
                     });
                     *view = output.view;
+                    zoom_shown = Some(zoom_readout(&output.view, output.scale));
                     masks_on_screen = Some(PhotoOnScreen {
                         area: ui.max_rect(),
                         whole_photo: output.whole_photo_rect,
@@ -879,9 +1174,16 @@ impl eframe::App for ZivApp {
             }
         });
 
+        self.zoom_readout = zoom_shown;
         self.export_dialog_window(ui);
         if is_dialog_open {
             return;
+        }
+        if let Some(intent) = window_intent {
+            self.apply_to_window(intent);
+        }
+        if let Some(intent) = sidebar_intent {
+            self.apply_to_series(intent);
         }
         if let Some(intent) = filmstrip_intent {
             self.apply(intent);
@@ -893,6 +1195,7 @@ impl eframe::App for ZivApp {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, EXPORT_SETTINGS_KEY, &self.export_settings);
+        eframe::set_value(storage, SIDEBAR_SHOWN_KEY, &self.is_sidebar_shown);
     }
 
     fn on_exit(&mut self) {

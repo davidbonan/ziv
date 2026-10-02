@@ -4,7 +4,7 @@
 > `☐` to do · `◐` in progress · `☑` done+verified · `⊘` blocked · `⏭` deferred.
 
 ## Next actions
-1. None planned: every milestone of the plan is done. Next: frame what comes after with `/spec`.
+1. None planned: every milestone of the plan is done.
 
 ## Blockers
 None.
@@ -173,3 +173,70 @@ intensity, reopen, export.
   Cancel. *Spec*: rules 1–6 · E5, E6. *Depends*: M6.3, M6.4. *Tests*: U, Eu, HV.
 - ☑ **M6.6 — Demo.** The model runs on the GPU (ADR 0010): a 32.7 MP RAW in
   about 20 s. *Spec*: E7. *Depends*: M6.5. *Tests*: HV.
+
+## ☑ M7 — Series catalog · 9/9
+Imports kept as series in a sidebar; the app reopens where it was left.
+Feature F7. *Spec*: `specs/catalog.md` (ADR 0011). *Demo*: import a folder and a
+set of files, edit a photo, quit, relaunch and find both series, the open one,
+the photo and its edit.
+
+- ☑ **M7.1 — Catalog end to end.** Series in the domain, the catalog file, an
+  import stored as a series, the last series and its photo reopened at launch.
+  *Spec*: `specs/catalog.md` rules 1–3, 13–15 · C1, C2, C4, C5. *Tests*: U, Eb, HV.
+- ☑ **M7.2 — Sidebar.** Series listed most recent first with name and date,
+  click to open on the remembered photo, Import… button, hide and show.
+  *Spec*: rules 6, 8–11 · C6, C7. *Depends*: M7.1. *Tests*: Eu, HV.
+- ☑ **M7.3 — Folder imported again.** New photos join the folder's series.
+  *Spec*: rules 4, 5 · C3. *Depends*: M7.1. *Tests*: U, Eb.
+- ☑ **M7.4 — Edited count.** "N of M edited" from the sidecars, following the
+  edits of the open series. *Spec*: rules 7, 12 · C8. *Depends*: M7.2.
+  *Tests*: U, Eb, Eu.
+- ☑ **M7.5 — Thumbnail cache and series cover.** Thumbnails kept on disk, read
+  back without decoding, refreshed when the photo changed; cover in the row.
+  *Spec*: rules 7, 16–19, 33 · C6, C9. *Depends*: M7.2. *Tests*: U, Eb, Eu.
+- ☑ **M7.6 — Missing photos and Locate.** Photos and series marked as not
+  found; Locate on a missing series. *Spec*: rules 20–25 · C10, C11.
+  *Depends*: M7.2. *Tests*: U, Eb, Eu.
+- ☑ **M7.7 — Managing a series.** Row menu: Rename, Show in Finder, Remove.
+  *Spec*: rules 26–30 · C12, C13. *Depends*: M7.2. *Tests*: U, Eu.
+- ☑ **M7.8 — Catalog failures.** Unreadable or newer catalog, write failure.
+  *Spec*: rules 31, 32 · C14. *Depends*: M7.1. *Tests*: U, Eb, Eu.
+- ☑ **M7.9 — Demo.** *Spec*: C15. *Depends*: M7.3–M7.8. *Tests*: HV.
+
+## ☑ M8 — Window shell · 8/8
+The layout and the controls of direction A of the mockup.
+*Spec*: `specs/shell.md`. *Demo*: the real app on a series, beside
+`specs/mockups/shell.html`.
+
+- ☑ **M8.1 — Top bar and layout.** Top bar with the sidebar button, the names,
+  Before and Export…; sidebar and develop panel down to the bottom; a filmstrip
+  without buttons. *Spec*: `specs/shell.md` rules 1–3, 5–8, 10 · S1, S3, S4.
+  *Tests*: Eu, HV.
+- ☑ **M8.2 — Zoom readout.** *Spec*: rule 4 · S2. *Depends*: M8.1. *Tests*: U, Eu.
+- ☑ **M8.3 — Filmstrip position and edited marker.** *Spec*: rules 8, 9 · S5.
+  *Depends*: M8.1. *Tests*: Eu, HV.
+- ☑ **M8.4 — Mask tools as icons.** *Spec*: rules 11, 12 · S6. *Tests*: Eu, HV.
+- ☑ **M8.5 — Folding sections.** Titles that fold, mask count on Masks.
+  *Spec*: rules 13–15 · S7. *Depends*: M8.4. *Tests*: Eu, HV.
+- ☑ **M8.6 — Panel foot.** Copy, Paste, Reset at the bottom; no panel title.
+  *Spec*: rules 16, 17 · S8. *Depends*: M8.1. *Tests*: Eu.
+- ☑ **M8.7 — Colored Temp and Tint tracks.** *Spec*: rules 18–20 · S9.
+  *Tests*: Eu, HV.
+- ☑ **M8.8 — Demo.** *Spec*: S10. *Depends*: M8.1–M8.7. *Tests*: HV.
+
+## ☑ M9 — Histogram and shooting data · 5/5
+The histogram of the developed photo and its shooting data at the top of the
+develop panel. Feature F9. *Spec*: `specs/histogram.md`. *Demo*: the real app on
+a series, the histogram following an edit, the shooting data under it.
+
+- ☑ **M9.1 — Histogram of a developed photo.** Levels counted from display
+  pixels, heights, the photo rendered small by the engine. *Spec*:
+  `specs/histogram.md` rules 2–4, 8 · H1, H2, H5. *Tests*: U, Eb.
+- ☑ **M9.2 — Histogram in the develop panel.** Drawn above the tool bar,
+  following the edit and Before. *Spec*: rules 1, 5–7, 13 · H3, H4.
+  *Depends*: M9.1. *Tests*: Eu, HV.
+- ☑ **M9.3 — Shooting data of a file.** Read from RAW, JPEG, PNG and TIFF,
+  worded. *Spec*: rules 10–12 · H6, H7. *Tests*: U, Eb.
+- ☑ **M9.4 — Shooting data in the develop panel.** The line under the
+  histogram. *Spec*: rule 9 · H8. *Depends*: M9.2, M9.3. *Tests*: Eu, HV.
+- ☑ **M9.5 — Demo.** *Spec*: H9. *Depends*: M9.4. *Tests*: HV.

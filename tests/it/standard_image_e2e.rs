@@ -53,7 +53,9 @@ fn stored_patches() -> Vec<Vec<[u8; 3]>> {
 
 #[test]
 fn png_displays_its_srgb_colors_unchanged() {
-    let image = decode_standard_image_file(&fixture("patches.png")).unwrap();
+    let image = decode_standard_image_file(&fixture("patches.png"))
+        .unwrap()
+        .image;
 
     assert_eq!((image.width(), image.height()), (48, 32));
     assert_patches_within(&displayed_patches(&image), &stored_patches(), 0);
@@ -61,21 +63,27 @@ fn png_displays_its_srgb_colors_unchanged() {
 
 #[test]
 fn tiff_displays_its_srgb_colors_unchanged() {
-    let image = decode_standard_image_file(&fixture("patches.tiff")).unwrap();
+    let image = decode_standard_image_file(&fixture("patches.tiff"))
+        .unwrap()
+        .image;
 
     assert_patches_within(&displayed_patches(&image), &stored_patches(), 0);
 }
 
 #[test]
 fn jpeg_displays_its_srgb_colors_within_compression_error() {
-    let image = decode_standard_image_file(&fixture("patches.jpg")).unwrap();
+    let image = decode_standard_image_file(&fixture("patches.jpg"))
+        .unwrap()
+        .image;
 
     assert_patches_within(&displayed_patches(&image), &stored_patches(), 2);
 }
 
 #[test]
 fn exif_orientation_is_applied() {
-    let image = decode_standard_image_file(&fixture("patches_rotated_90_cw.jpg")).unwrap();
+    let image = decode_standard_image_file(&fixture("patches_rotated_90_cw.jpg"))
+        .unwrap()
+        .image;
 
     let upright = vec![vec![WHITE, RED], vec![BLACK, GREEN], vec![GREY, BLUE]];
     assert_eq!((image.width(), image.height()), (32, 48));
