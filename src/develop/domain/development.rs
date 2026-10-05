@@ -85,15 +85,17 @@ impl Development {
     }
 
     /// The edited value of the working-space pixel at `point`, base rendering
-    /// not applied yet. Each visible mask blends its adjustments by its coverage.
+    /// not applied yet. Each visible mask blends its adjustments by its
+    /// coverage; the color mixer then acts on the photo with its masks.
     pub fn edited(&self, working: [f32; 3], point: PhotoPoint) -> [f32; 3] {
         let globally = self.photo_factors().applied(working);
-        self.edit.visible_masks().fold(globally, |colour, mask| {
+        let masked = self.edit.visible_masks().fold(globally, |colour, mask| {
             let coverage = mask.coverage(point);
             let locally = self.mask_factors(mask).applied(colour);
             [0, 1, 2]
                 .map(|channel| colour[channel] + (locally[channel] - colour[channel]) * coverage)
-        })
+        });
+        self.edit.color_mixer.applied(masked)
     }
 
     pub fn to_display(
@@ -103,7 +105,9 @@ impl Development {
         transform: &DisplayTransform,
     ) -> [f32; 3] {
         let display_linear = transform.to_display_linear(self.edited(working, point));
-        transform.encoded(self.base_rendering().rendered(display_linear))
+        let encoded = transform.encoded(self.base_rendering().rendered(display_linear));
+        let graded = self.edit.color_grading.applied(encoded);
+        self.edit.tone_curves.applied(graded)
     }
 }
 
@@ -111,8 +115,11 @@ impl Development {
 mod tests {
     use super::*;
     use crate::color::domain::illuminant::Illuminant;
+    use crate::develop::domain::color_grading::ZoneGrade;
+    use crate::develop::domain::color_mixer::ColorRange;
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::MaskShape;
+    use crate::develop::domain::tone_curve::ToneCurve;
     use crate::develop::domain::white_balance::WhiteBalance;
 
     const PIXEL: [f32; 3] = [0.1, 0.4, 0.9];
@@ -183,6 +190,39 @@ mod tests {
         assert_close(enhanced_at(0.0), PIXEL);
         assert_close(enhanced_at(50.0), [0.15, 0.3, 0.7]);
         assert_close(enhanced_at(100.0), cleaned);
+    }
+
+    #[test]
+    fn the_order_the_curve_and_color_tools_were_touched_in_changes_nothing() {
+        let curve = ToneCurve::default().with_point_moved(0, [0.0, 0.1]);
+        let grade = ZoneGrade {
+            hue: 200.0,
+            saturation: 50.0,
+            luminance: 10.0,
+        };
+        let touches: [fn(&mut Edit, &ToneCurve, ZoneGrade); 3] = [
+            |edit, curve, _| edit.tone_curves.rgb = curve.clone(),
+            |edit, _, _| edit.color_mixer.saturation[ColorRange::Blue] = 60.0,
+            |edit, _, grade| edit.color_grading.shadows = grade,
+        ];
+        let displayed = |order: [usize; 3]| {
+            let mut edit = Edit::default();
+            for touch in order {
+                touches[touch](&mut edit, &curve, grade);
+            }
+            let development = Development {
+                edit,
+                ..Development::default()
+            };
+            development.to_display(PIXEL, SOMEWHERE, &DisplayTransform::default())
+        };
+
+        assert_eq!(displayed([0, 1, 2]), displayed([2, 1, 0]));
+        assert_eq!(displayed([0, 1, 2]), displayed([1, 2, 0]));
+        assert_ne!(
+            displayed([0, 1, 2]),
+            Development::default().to_display(PIXEL, SOMEWHERE, &DisplayTransform::default(),)
+        );
     }
 
     #[test]

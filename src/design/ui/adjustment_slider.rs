@@ -52,6 +52,9 @@ pub enum Track {
     AccentFill,
     /// From one hue to the other through neutral: where each end takes the photo.
     Hues { start: Color32, end: Color32 },
+    /// From the first color to the last through the middle one: what each end
+    /// makes of the color at the default.
+    Colors([Color32; 3]),
 }
 
 pub struct AdjustmentSlider {
@@ -325,13 +328,18 @@ impl AdjustmentSlider {
                 Rect::from_center_size(pos2(default_x, center_y), vec2(1.0, DEFAULT_TICK_HEIGHT));
             painter.rect_filled(tick, 0.0, color::TRACK);
         }
-        match self.track {
-            Track::Hues { start, end } if shown.enabled => {
+        let colors = match self.track {
+            Track::Hues { start, end } => Some([start, hue::NEUTRAL, end]),
+            Track::Colors(colors) => Some(colors),
+            Track::AccentFill => None,
+        };
+        match colors.filter(|_| shown.enabled) {
+            Some(colors) => {
                 let grow = (HUE_TRACK_THICKNESS - TRACK_THICKNESS) / 2.0;
                 let band = segment(start_x, end_x).expand2(vec2(0.0, grow));
-                paint_hues(painter, band, [start, hue::NEUTRAL, end]);
+                paint_hues(painter, band, colors);
             }
-            _ => {
+            None => {
                 painter.rect_filled(segment(start_x, end_x), TRACK_THICKNESS / 2.0, color::TRACK);
             }
         }

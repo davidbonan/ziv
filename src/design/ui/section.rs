@@ -91,10 +91,14 @@ pub fn section<Shown>(
     if title_row(ui, title, openness).clicked() {
         state.toggle(ui);
     }
+    // Its own scope of ids: two sections may each hold a control of the same name.
     let body = state.show_body_unindented(ui, |ui| {
-        let shown = add_contents(ui);
-        ui.add_space(space::S);
-        shown
+        ui.push_id(id, |ui| {
+            let shown = add_contents(ui);
+            ui.add_space(space::S);
+            shown
+        })
+        .inner
     });
     body.map(|body| body.inner)
 }

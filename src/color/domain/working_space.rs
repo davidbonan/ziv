@@ -1,4 +1,4 @@
-use super::matrix3;
+use super::matrix3::{self, RgbMatrix, transformed};
 use super::primaries::{Primaries, REC709, REC2020};
 use super::srgb_transfer;
 
@@ -16,10 +16,13 @@ pub fn luminance_weights() -> [f32; 3] {
     matrix3::to_f32(&PRIMARIES.rgb_to_xyz())[1]
 }
 
-type RgbMatrix = [[f32; 3]; 3];
+/// Rec.709 luma weights of red, green and blue: what the histogram counts as luminance.
+pub const DISPLAY_LUMA_WEIGHTS: [f32; 3] = [0.2126, 0.7152, 0.0722];
 
-fn transform(matrix: &RgbMatrix, [red, green, blue]: [f32; 3]) -> [f32; 3] {
-    matrix.map(|row| row[0] * red + row[1] * green + row[2] * blue)
+/// The luma of a display-encoded pixel.
+pub fn display_luma([red, green, blue]: [f32; 3]) -> f32 {
+    let [for_red, for_green, for_blue] = DISPLAY_LUMA_WEIGHTS;
+    for_red * red + for_green * green + for_blue * blue
 }
 
 /// Encoded sRGB → linear working space.
@@ -37,7 +40,7 @@ impl Default for SrgbInput {
 
 impl SrgbInput {
     pub fn to_working(&self, encoded: [f32; 3]) -> [f32; 3] {
-        transform(&self.rec709_to_working, encoded.map(srgb_transfer::decode))
+        transformed(&self.rec709_to_working, encoded.map(srgb_transfer::decode))
     }
 }
 
@@ -60,7 +63,7 @@ impl DisplayTransform {
     }
 
     pub fn to_display_linear(&self, working: [f32; 3]) -> [f32; 3] {
-        transform(&self.working_to_rec709, working)
+        transformed(&self.working_to_rec709, working)
     }
 
     pub fn encoded(&self, display_linear: [f32; 3]) -> [f32; 3] {
@@ -99,6 +102,15 @@ mod tests {
                 to_8_bit(display.to_display(input.to_working(encoded))),
                 code
             );
+        }
+    }
+
+    #[test]
+    fn display_luma_weights_are_the_luminances_of_the_display_primaries() {
+        let of_primaries = matrix3::to_f32(&REC709.rgb_to_xyz())[1];
+
+        for (weight, luminance) in DISPLAY_LUMA_WEIGHTS.iter().zip(of_primaries) {
+            assert!((weight - luminance).abs() < 1e-4);
         }
     }
 

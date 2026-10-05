@@ -1,8 +1,14 @@
 use std::ops::Range;
 use std::sync::Mutex;
 
+use crate::color::domain::matrix3::RgbMatrix;
+use crate::color::domain::oklab::oklab;
 use crate::color::domain::srgb_transfer;
-use crate::color::domain::working_space::{DisplayTransform, luminance_weights};
+use crate::color::domain::working_space::{
+    DISPLAY_LUMA_WEIGHTS, DisplayTransform, luminance_weights,
+};
+use crate::develop::domain::color_grading::ColorGrading;
+use crate::develop::domain::color_mixer::{CHROMA_FADE, ColorMixer, RANGE_COUNT};
 use crate::develop::domain::development::{AdjustmentFactors, Development};
 use crate::develop::domain::edit::{Edit, MOST_MASKS};
 use crate::develop::domain::feathered_edge::FEATHER_REACH;
@@ -16,9 +22,13 @@ use crate::develop::domain::tone::{
 };
 
 use super::coverage_layers::no_coverage_layer;
+use super::curve_lookup::CurveLookup;
 use super::source_texture::SourceTexture;
 
-const STAGE_ROWS: usize = 12;
+const OKLAB_ROWS: usize = 12;
+const COLOR_MIXER_ROWS: usize = 1 + RANGE_COUNT + OKLAB_ROWS;
+const COLOR_GRADING_ROWS: usize = 6;
+const STAGE_ROWS: usize = 13 + COLOR_MIXER_ROWS + COLOR_GRADING_ROWS;
 const ADJUSTMENT_ROWS: usize = 5;
 const CORNER_ROWS: usize = MOST_CORNERS / 2;
 const MASK_ROWS: usize = ADJUSTMENT_ROWS + 3 + CORNER_ROWS;
@@ -179,6 +189,64 @@ fn mask_rows(development: &Development, mask: &Mask) -> Vec<[f32; 4]> {
     rows
 }
 
+fn color_mixer_rows(mixer: &ColorMixer) -> [[f32; 4]; COLOR_MIXER_ROWS] {
+    let is_applied = match mixer.is_default() {
+        true => 0.0,
+        false => 1.0,
+    };
+    let ranges = mixer.range_factors().map(|range| {
+        [
+            range.centre,
+            range.hue_turn,
+            range.chroma_scale,
+            range.lightness_scale,
+        ]
+    });
+    let oklab = oklab();
+    let matrices: [&RgbMatrix; 4] = [
+        &oklab.working_to_lms,
+        &oklab.lms_to_lab,
+        &oklab.lab_to_lms,
+        &oklab.lms_to_working,
+    ];
+    let mut rows = [[0.0; 4]; COLOR_MIXER_ROWS];
+    rows[0] = [CHROMA_FADE, is_applied, 0.0, 0.0];
+    rows[1..=RANGE_COUNT].copy_from_slice(&ranges);
+    let matrix_rows = matrices
+        .into_iter()
+        .flatten()
+        .map(|[first, second, third]| [*first, *second, *third, 0.0]);
+    for (row, matrix_row) in rows[1 + RANGE_COUNT..].iter_mut().zip(matrix_rows) {
+        *row = matrix_row;
+    }
+    rows
+}
+
+fn color_grading_rows(grading: &ColorGrading) -> [[f32; 4]; COLOR_GRADING_ROWS] {
+    let is_applied = match grading.changes_nothing() {
+        true => 0.0,
+        false => 1.0,
+    };
+    let factors = grading.factors();
+    let [for_red, for_green, for_blue] = DISPLAY_LUMA_WEIGHTS;
+    let [shadows, midtones, highlights, global] = factors
+        .offsets
+        .map(|[red, green, blue]| [red, green, blue, 0.0]);
+    [
+        [for_red, for_green, for_blue, is_applied],
+        [
+            factors.balance_exponent,
+            factors.passage,
+            factors.shadows_edge,
+            factors.highlights_edge,
+        ],
+        shadows,
+        midtones,
+        highlights,
+        global,
+    ]
+}
+
 fn stage_rows(
     transform: &DisplayTransform,
     request: &DisplayRequest,
@@ -230,7 +298,11 @@ fn stage_rows(
         None => 0.0,
     };
     let overlay = [veil_red, veil_green, veil_blue, veil_opacity];
-    [
+    let tone_curves = match development.edit.tone_curves.is_identity() {
+        true => [0.0; 4],
+        false => [1.0, 0.0, 0.0, 0.0],
+    };
+    let fixed = [
         red,
         green,
         blue,
@@ -243,7 +315,14 @@ fn stage_rows(
         photo,
         overlay,
         mask_limits,
-    ]
+        tone_curves,
+    ];
+    let mut rows = [[0.0; 4]; STAGE_ROWS];
+    rows[..fixed.len()].copy_from_slice(&fixed);
+    let graded = fixed.len() + COLOR_MIXER_ROWS;
+    rows[fixed.len()..graded].copy_from_slice(&color_mixer_rows(&development.edit.color_mixer));
+    rows[graded..].copy_from_slice(&color_grading_rows(&development.edit.color_grading));
+    rows
 }
 
 fn uniform_values(
@@ -275,8 +354,9 @@ pub struct DisplayStage {
     smooth_sampler: wgpu::Sampler,
     pixelated_sampler: wgpu::Sampler,
     no_coverage_layer: wgpu::TextureView,
+    curve_lookup: CurveLookup,
     transform: DisplayTransform,
-    // The uniforms are shared: a render writes them, then draws with them.
+    // The uniforms and the curve lookup are shared: a render writes them, then draws with them.
     one_render_at_a_time: Mutex<()>,
 }
 
@@ -331,6 +411,7 @@ impl DisplayStage {
             smooth_sampler,
             pixelated_sampler,
             no_coverage_layer: no_coverage_layer(device),
+            curve_lookup: CurveLookup::new(device),
             transform: DisplayTransform::default(),
             one_render_at_a_time: Mutex::new(()),
         }
@@ -346,6 +427,10 @@ impl DisplayStage {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::cast_slice(&values));
+        let tone_curves = &request.development.edit.tone_curves;
+        if !tone_curves.is_identity() {
+            self.curve_lookup.write(&self.queue, tone_curves);
+        }
         let sampler = match request.sampling {
             Sampling::Smooth => &self.smooth_sampler,
             Sampling::Pixelated => &self.pixelated_sampler,
@@ -403,6 +488,10 @@ impl DisplayStage {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(source.enhancement_view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(self.curve_lookup.view()),
                 },
             ],
         });

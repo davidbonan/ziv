@@ -44,8 +44,15 @@ pub fn inverse(matrix: &Matrix3) -> Option<Matrix3> {
     Some(adjugate.map(|row| row.map(|cell| cell / determinant)))
 }
 
-pub fn to_f32(matrix: &Matrix3) -> [[f32; 3]; 3] {
+/// A matrix as the pixel math and the shader use it.
+pub type RgbMatrix = [[f32; 3]; 3];
+
+pub fn to_f32(matrix: &Matrix3) -> RgbMatrix {
     matrix.map(|row| row.map(|cell| cell as f32))
+}
+
+pub fn transformed(matrix: &RgbMatrix, [first, second, third]: [f32; 3]) -> [f32; 3] {
+    matrix.map(|row| row[0] * first + row[1] * second + row[2] * third)
 }
 
 #[cfg(test)]

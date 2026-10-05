@@ -28,11 +28,11 @@ src/<module>/<part>/{domain,application,infrastructure,ui}/
 src/main.rs                      eframe wrapper
 src/lib.rs                       module declarations
 src/app.rs                       ZivApp, run()
-src/design/ui/                   theme (colors, hues, spacing, type), AdjustmentSlider (accent or hue track), icon button and toggle,
-                                 primary button, folding section, floating pill, Notice
+src/design/ui/                   theme (colors, hues, spacing, type), AdjustmentSlider (accent, hue or color track), icon button and toggle,
+                                 primary button, folding section, marked choice (a selector button, marked when it holds an edit), floating pill, Notice
 src/shell/domain/                WindowMode: Cull or Develop
 src/shell/ui/                    top bar: sidebar button, series and photo names, mode switch, zoom readout, Before, Export…
-src/color/domain/                primaries, matrices, sRGB transfer, working space, Illuminant
+src/color/domain/                primaries, matrices, sRGB transfer, working space, Oklab, Illuminant
 src/photo/application/           PhotoLoader (worker thread), PhotosAhead (photos loaded before they are asked for)
 src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, ShootingData, PhotoDetails (pixel size, ShotAt, file size), Thumbnail, Orientation, CameraCalibration, DecodeError
 src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`), the picture a RAW embeds as its preview; shooting data from EXIF (`rawler`);
@@ -43,15 +43,19 @@ src/histogram/infrastructure/    DevelopedHistogram: the photo rendered small by
 src/histogram/ui/                histogram plot
 src/develop/application/         SessionEdits: edits of the session, stored as they settle
 src/develop/infrastructure/      SidecarFiles: one JSON file next to each edited photo
-src/develop/domain/              Edit (Adjustments + masks), EditHistory, CopiedEdit, WhiteBalance, Tone, Presence, BaseRendering, Development;
+src/develop/domain/              Edit (Adjustments + masks + tone curves + color mixer + color grading), EditHistory, CopiedEdit, WhiteBalance, Tone, Presence, BaseRendering, Development;
+                                 ToneCurve (points, monotone interpolation, lookup), one per CurveChannel;
+                                 ColorMixer (Hue, Saturation, Luminance per ColorRange); ColorGrading (a ZoneGrade per TonalZone, Blending, Balance);
                                  Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay
 src/develop/ui/                  develop panel (tool bar, folding sections, foot), mask tool bar and masks list,
-                                 mask canvas (drawing and handles over the photo), Before badge
+                                 mask canvas (drawing and handles over the photo), tone curve section (channel selector, graph, Reset curve),
+                                 color mixer section (adjustment selector, eight sliders with color tracks),
+                                 color wheel, color grading section (3-way and zone views, Blending, Balance), Before badge
 src/export/domain/               ExportSettings: format, size, destination, file naming
 src/export/application/          ExportRun: several photos exported in the background
 src/export/infrastructure/       one photo → file (`image` encoders), destination picker
 src/export/ui/                   export dialog, progress, summary
-src/engine/infrastructure/       Engine: upload + mipmaps, display stage (WGSL: enhancement mix, adjustments, masks, overlay), mask coverage layers, readback, render to pixels
+src/engine/infrastructure/       Engine: upload + mipmaps, display stage (WGSL: enhancement mix, adjustments, masks, color mixer, color grading, tone curve, overlay), mask coverage layers, curve lookup, readback, render to pixels
 src/enhance/domain/              Enhancement (differences from the original), ModelEncoding, noise level, overlapping tiles, unsharp mask, the enhancement model; port: EnhancementStorage
 src/enhance/application/         Enhancer: photo → enhancement, tile by tile; EnhancementRun (worker thread, Cancel)
 src/enhance/infrastructure/      EnhancementFiles: one file next to each enhanced photo; photo → enhancement file; upload with enhancement

@@ -11,7 +11,7 @@ use crate::themed::is_themed;
 /// The panel as the app shows it: what it is given stays, what the user asks is kept.
 fn panel_harness(state: DevelopPanelState) -> Harness<'static, DevelopPanelState> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(300.0, 900.0))
+        .with_size(egui::vec2(300.0, 2400.0))
         .build_ui_state(
             |ui, state: &mut DevelopPanelState| {
                 if !is_themed(ui) {

@@ -3,11 +3,14 @@ use std::sync::Arc;
 use ziv::color::domain::working_space::DisplayTransform;
 use ziv::develop::domain::adjustments::Adjustments;
 use ziv::develop::domain::brush::{BrushMask, Stroke};
+use ziv::develop::domain::color_grading::ZoneGrade;
+use ziv::develop::domain::color_mixer::ColorRange;
 use ziv::develop::domain::coverage_image::{CoverageImage, coverage_image_size};
 use ziv::develop::domain::development::Development;
 use ziv::develop::domain::edit::Edit;
 use ziv::develop::domain::linear_gradient::LinearGradient;
 use ziv::develop::domain::mask::{Mask, MaskShape, photo_extent};
+use ziv::develop::domain::tone_curve::ToneCurve;
 use ziv::develop::domain::zone::{Zone, ZoneMask};
 use ziv::engine::infrastructure::display_stage::DisplayRequest;
 use ziv::photo::domain::working_image::WorkingImage;
@@ -83,6 +86,48 @@ fn pixels_at_the_photo_size_equal_the_display_render() {
         .unwrap();
 
     assert_eq!(pixels, displayed);
+}
+
+fn curved_mixed_and_graded() -> Development {
+    let mut edit = Edit::default();
+    edit.tone_curves.rgb =
+        ToneCurve::try_from(vec![[0.0, 0.0], [0.25, 0.15], [0.75, 0.85], [1.0, 1.0]]).unwrap();
+    edit.color_mixer.saturation[ColorRange::Green] = -60.0;
+    edit.color_mixer.luminance[ColorRange::Blue] = -40.0;
+    edit.color_grading.shadows = ZoneGrade {
+        hue: 185.0,
+        saturation: 60.0,
+        luminance: 0.0,
+    };
+    Development {
+        edit,
+        ..Development::default()
+    }
+}
+
+#[test]
+fn pixels_of_a_photo_with_curve_color_mixer_and_color_grading_equal_the_display_render() {
+    let engine = headless_engine();
+    let source = engine.upload(&ramp_and_patches());
+
+    for size in [[WIDTH, HEIGHT], [WIDTH / 2, HEIGHT / 2]] {
+        let request = DisplayRequest {
+            development: curved_mixed_and_graded(),
+            ..DisplayRequest::whole_source(size)
+        };
+        let displayed = engine
+            .read_display_pixels(&engine.render_display(&source, &request))
+            .unwrap();
+        let pixels = engine
+            .render_pixels(&source, &curved_mixed_and_graded(), size)
+            .unwrap();
+        let untouched = engine
+            .render_pixels(&source, &Development::default(), size)
+            .unwrap();
+
+        assert_eq!(pixels, displayed, "at {size:?}");
+        assert_ne!(pixels, untouched, "at {size:?}");
+    }
 }
 
 #[test]

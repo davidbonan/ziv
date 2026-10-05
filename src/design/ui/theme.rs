@@ -31,9 +31,13 @@ pub mod color {
     pub const PICTURE_OUTLINE: Color32 = Color32::from_rgba_premultiplied(26, 26, 26, 26);
 }
 
-/// The ends of the white balance tracks: where each slider takes the photo.
+/// The ends of the white balance tracks, where each slider takes the photo,
+/// and the channels of a picture.
 pub mod hue {
     use egui::Color32;
+
+    pub const RED: Color32 = Color32::from_rgb(0xE2, 0x5B, 0x52);
+    pub const BLUE: Color32 = Color32::from_rgb(0x4F, 0x8F, 0xF0);
 
     pub const COOL: Color32 = Color32::from_rgb(0x2F, 0x6F, 0xD0);
     pub const WARM: Color32 = Color32::from_rgb(0xE8, 0x9A, 0x2A);

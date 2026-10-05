@@ -1413,6 +1413,7 @@ impl ZivApp {
                 }
                 let shown = DevelopPanelState {
                     edit: selected,
+                    histogram: histogram.cloned(),
                     mask_selection: self.mask_selection,
                     is_before_shown: self.is_before_shown,
                     is_detecting: self.zone_detection.is_some() || self.people_pick.is_some(),

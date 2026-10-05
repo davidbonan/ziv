@@ -3,12 +3,20 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use ziv::color::domain::illuminant::Illuminant;
 use ziv::develop::domain::adjustments::Adjustments;
+use ziv::develop::domain::color_grading::TonalZone;
+use ziv::develop::domain::color_mixer::ColorRange;
+use ziv::develop::domain::edit::Edit;
 use ziv::develop::domain::white_balance::WhiteBalance;
+use ziv::develop::ui::color_grading_section::{GRADE_SATURATION_LABEL, grading_zone_label};
 use ziv::develop::ui::develop_panel::{
-    BLACKS_LABEL, CONTRAST_LABEL, COPY_LABEL, DevelopPanelState, EXPOSURE_LABEL, HIGHLIGHTS_LABEL,
-    PASTE_LABEL, RESET_LABEL, SATURATION_LABEL, SHADOWS_LABEL, TEMPERATURE_LABEL, TINT_LABEL,
-    TONE_GROUP_LABEL, VIBRANCE_LABEL, WHITES_LABEL, develop_panel,
+    BLACKS_LABEL, COLOR_GRADING_GROUP_LABEL, COLOR_MIXER_GROUP_LABEL, CONTRAST_LABEL, COPY_LABEL,
+    DETAIL_GROUP_LABEL, DevelopPanelState, EXPOSURE_LABEL, HIGHLIGHTS_LABEL, PASTE_LABEL,
+    PRESENCE_GROUP_LABEL, RESET_LABEL, SATURATION_LABEL, SHADOWS_LABEL, TEMPERATURE_LABEL,
+    TINT_LABEL, TONE_CURVE_GROUP_LABEL, TONE_GROUP_LABEL, VIBRANCE_LABEL,
+    WHITE_BALANCE_GROUP_LABEL, WHITES_LABEL, develop_panel,
 };
+use ziv::develop::ui::masks_section::MASKS_GROUP_LABEL;
+use ziv::develop::ui::tone_curve_graph::TONE_CURVE_GRAPH_LABEL;
 use ziv::photo::domain::photo_kind::PhotoKind;
 
 use crate::themed::is_themed;
@@ -353,4 +361,122 @@ fn section_folds_and_unfolds_by_its_title_and_keeps_its_values() {
     harness.get_by_label(TONE_GROUP_LABEL).click();
     harness.run();
     assert!(harness.query_by_label(EXPOSURE_LABEL).is_some());
+}
+
+#[test]
+fn a_press_on_the_tone_curve_graph_adds_a_point_to_the_curve_of_the_photo() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 1100.0))
+        .build_ui_state(
+            |ui, state: &mut DevelopPanelState| {
+                if is_themed(ui) {
+                    *state = develop_panel(ui, &PhotoKind::StandardImage, state.clone());
+                }
+            },
+            DevelopPanelState::default(),
+        );
+    harness.run();
+    let graph = harness.get_by_label(TONE_CURVE_GRAPH_LABEL).rect();
+    let brighter_middle = graph.center() - egui::vec2(0.0, graph.height() / 4.0);
+
+    harness.hover_at(brighter_middle);
+    harness.run();
+    harness.drag_at(brighter_middle);
+    harness.run();
+    harness.drop_at(brighter_middle);
+    harness.run();
+
+    let curve = &harness.state().edit.tone_curves.rgb;
+    assert_eq!(curve.points().len(), 3);
+    assert!(curve.applied(0.5) > 0.7);
+}
+
+#[test]
+fn saturation_of_a_tonal_zone_and_saturation_of_the_photo_are_two_sliders() {
+    let mut harness = tall_panel(DevelopPanelState::default());
+    harness
+        .get_by_label(&grading_zone_label(TonalZone::Shadows, false))
+        .click();
+    harness.run();
+
+    let saturations: Vec<_> = harness
+        .get_all_by_role_and_label(Role::Slider, GRADE_SATURATION_LABEL)
+        .collect();
+    assert_eq!(saturations.len(), 2);
+    let of_the_zone = saturations
+        .iter()
+        .max_by(|one, other| one.rect().top().total_cmp(&other.rect().top()))
+        .unwrap();
+    of_the_zone.focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+
+    let edit = &harness.state().edit;
+    assert_eq!(edit.color_grading.shadows.saturation, 1.0);
+    assert_eq!(edit.adjustments.saturation, 0.0);
+}
+
+fn tall_panel(state: DevelopPanelState) -> Harness<'static, DevelopPanelState> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 2400.0))
+        .build_ui_state(
+            |ui, state: &mut DevelopPanelState| {
+                if is_themed(ui) {
+                    *state = develop_panel(ui, &PhotoKind::StandardImage, state.clone());
+                }
+            },
+            state,
+        );
+    harness.run();
+    harness
+}
+
+#[test]
+fn the_sections_of_a_photo_come_in_the_order_of_the_development() {
+    let harness = tall_panel(DevelopPanelState::default());
+    let sections = [
+        MASKS_GROUP_LABEL,
+        WHITE_BALANCE_GROUP_LABEL,
+        TONE_GROUP_LABEL,
+        PRESENCE_GROUP_LABEL,
+        TONE_CURVE_GROUP_LABEL,
+        COLOR_MIXER_GROUP_LABEL,
+        COLOR_GRADING_GROUP_LABEL,
+        DETAIL_GROUP_LABEL,
+    ];
+
+    let tops = sections.map(|section| {
+        let title = harness.get_by_label(section);
+        title.rect().top()
+    });
+
+    assert!(tops.windows(2).all(|pair| pair[0] < pair[1]), "{tops:?}");
+}
+
+#[test]
+fn the_tone_curve_section_folds_like_the_others() {
+    let mut harness = tall_panel(DevelopPanelState::default());
+
+    harness.get_by_label(TONE_CURVE_GROUP_LABEL).click();
+    harness.run();
+
+    assert!(harness.query_by_label(TONE_CURVE_GRAPH_LABEL).is_none());
+}
+
+#[test]
+fn reset_returns_the_curves_the_color_mixer_and_the_color_grading_to_their_defaults() {
+    let mut edit = Edit::default();
+    edit.tone_curves.red = edit.tone_curves.red.with_point_moved(0, [0.0, 0.2]);
+    edit.color_mixer.hue[ColorRange::Red] = 30.0;
+    edit.color_grading.balance = 40.0;
+    let mut harness = tall_panel(DevelopPanelState {
+        edit,
+        ..DevelopPanelState::default()
+    });
+
+    harness.get_by_label(RESET_LABEL).click();
+    harness.run();
+
+    assert_eq!(*harness.state(), DevelopPanelState::default());
 }

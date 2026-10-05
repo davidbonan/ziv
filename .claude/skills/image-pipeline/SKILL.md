@@ -55,6 +55,23 @@ This file holds the invariants every engine task must respect.
   (`Engine::upload_enhancement`). The stage mixes it with the original by
   `Edit::enhancement_intensity` before anything else (`Development::enhanced`,
   `enhanced()` in the shader); a source without enhancement mixes nothing.
+- `src/develop/domain/tone_curve.rs` — `ToneCurve`: points on display tones,
+  monotone cubic between them; `ToneCurves::lookup` is what the stage samples
+  (`curve_lookup.rs`, one row of 256 texels, `tone_curved()` in the shader).
+  Applied after encoding, to the photo with its masks, never per mask (ADR 0014).
+- `src/color/domain/oklab.rs` — Oklab of the working space (scene-referred,
+  nothing clipped); its four matrices reach the shader through uniforms.
+- `src/develop/domain/color_mixer.rs` — `ColorMixer`: Hue, Saturation and
+  Luminance of eight color ranges, computed in Oklch. A color gets a share of
+  the two ranges its hue sits between; Hue and Luminance fade out as chroma
+  goes to zero, so a grey never moves. `Development::edited` applies it after
+  the masks, `color_mixed()` in the shader (ADR 0014). Skipped at its default.
+- `src/develop/domain/color_grading.rs` — `ColorGrading`: a tint and a
+  luminance per tonal zone, on display-encoded values after the clamp. Shadows,
+  midtones and highlights share every tone by its Rec.709 luma (Balance bends
+  the luma, Blending widens the passages); Global weighs 1. `GradingFactors`
+  is what the shader gets, `color_graded()` there (ADR 0014). Skipped when no
+  zone holds a saturation or a luminance.
 - `Engine::render_pixels` — the whole developed photo at any size, as pixels:
   what export writes. Same display stage, rendered in strips.
 - `tests/it/gpu.rs`, `tests/it/golden.rs` — headless engine and golden compare.
@@ -70,10 +87,12 @@ This file holds the invariants every engine task must respect.
    file is never written. Default parameters produce the identity.
 4. **Fixed stage order.** Stages run in one documented order, independent of the
    order the user touched the sliders: enhancement mixed in by its intensity → white balance → exposure → contrast → highlights and
-   shadows → whites → blacks → vibrance and saturation → working to display
-   primaries → base rendering →
-   clamp and encode. Extend this list with each adjustment;
-   adjustments go before the conversion to display primaries.
+   shadows → whites → blacks → vibrance and saturation → masks → color mixer →
+   working to display primaries → base rendering →
+   clamp and encode → color grading → tone curve. Extend this list with each
+   adjustment; adjustments go before the conversion to display primaries,
+   except color grading and the tone curve, which map display-encoded values
+   (ADR 0014).
 5. **A mask is a coverage in [0, 1].** A local adjustment is the same adjustment
    as the global one, blended by the mask. No second implementation of the math.
    Brush, gradient, shape and segmentation all produce the same kind of mask.

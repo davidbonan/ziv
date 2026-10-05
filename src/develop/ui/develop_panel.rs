@@ -15,11 +15,15 @@ use crate::develop::domain::white_balance::{
 };
 use crate::develop::domain::zone::DetectionTool;
 use crate::enhance::ui::detail_section::{DetailShown, detail_section};
+use crate::histogram::domain::histogram::Histogram;
 use crate::photo::domain::photo_kind::PhotoKind;
 
+use super::color_grading_section::color_grading_section;
+use super::color_mixer_section::color_mixer_section;
 use super::masks_section::{
     MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, mask_tool_bar, masks_list,
 };
+use super::tone_curve_section::tone_curve_section;
 
 pub const TEMPERATURE_LABEL: &str = "Temp";
 pub const TINT_LABEL: &str = "Tint";
@@ -32,6 +36,9 @@ pub const BLACKS_LABEL: &str = "Blacks";
 pub const VIBRANCE_LABEL: &str = "Vibrance";
 pub const SATURATION_LABEL: &str = "Saturation";
 pub const PRESENCE_GROUP_LABEL: &str = "Presence";
+pub const TONE_CURVE_GROUP_LABEL: &str = "Tone curve";
+pub const COLOR_MIXER_GROUP_LABEL: &str = "Color mixer";
+pub const COLOR_GRADING_GROUP_LABEL: &str = "Color grading";
 pub const DETAIL_GROUP_LABEL: &str = "Detail";
 pub const RESET_LABEL: &str = "Reset";
 pub const COPY_LABEL: &str = "Copy";
@@ -153,6 +160,8 @@ fn white_balance_sliders(
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DevelopPanelState {
     pub edit: Edit,
+    /// The histogram of the photo as developed, when there is one.
+    pub histogram: Option<Histogram>,
     pub mask_selection: MaskSelection,
     pub is_before_shown: bool,
     /// A detection runs: the zone tools wait for it.
@@ -394,7 +403,7 @@ fn mask_adjusted(
     }
 }
 
-/// The sliders of the photo itself, then its Detail section.
+/// The sliders of the photo itself, its tone curve, then its Detail section.
 fn photo_adjusted(
     ui: &mut egui::Ui,
     kind: &PhotoKind,
@@ -402,6 +411,24 @@ fn photo_adjusted(
 ) -> DevelopPanelState {
     let mut state = state;
     state.edit.adjustments = adjusted(ui, kind, state.edit.adjustments);
+    let curves = section(ui, &SectionTitle::of(TONE_CURVE_GROUP_LABEL), |ui| {
+        tone_curve_section(ui, &state.edit.tone_curves, state.histogram.as_ref())
+    });
+    if let Some(curves) = curves {
+        state.edit.tone_curves = curves;
+    }
+    let mixer = section(ui, &SectionTitle::of(COLOR_MIXER_GROUP_LABEL), |ui| {
+        color_mixer_section(ui, &state.edit.color_mixer)
+    });
+    if let Some(mixer) = mixer {
+        state.edit.color_mixer = mixer;
+    }
+    let grading = section(ui, &SectionTitle::of(COLOR_GRADING_GROUP_LABEL), |ui| {
+        color_grading_section(ui, &state.edit.color_grading)
+    });
+    if let Some(grading) = grading {
+        state.edit.color_grading = grading;
+    }
     let shown = DetailShown {
         is_enhanced: state.is_enhanced,
         is_enhancing: state.is_enhancing,

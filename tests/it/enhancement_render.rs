@@ -46,6 +46,7 @@ fn developed_at(enhancement_intensity: f32) -> Development {
         },
         masks: vec![brighter_left],
         enhancement_intensity,
+        ..Edit::default()
     };
     Development {
         edit,

@@ -126,6 +126,12 @@ a headless run: never drive them. State is injected through a constructor seam:
   already been chosen (the folder picker cannot be driven). Export settings are
   not persisted in a headless run: there is no eframe storage.
 
+An edit made in a harness is stored as `<photo>.ziv.json` beside the path the
+photo was opened from, and the next run opens it already edited. Never edit a
+fixture in place: copy it into `verify-artifacts/<HV_ID>/` and open the copy
+(a symlink there is enough for the large local RAW — the sidecar lands beside
+the symlink, not beside its target).
+
 `.wgpu()` on the builder is required: `ZivApp` takes its device from
 `cc.wgpu_render_state`, which the default lazy renderer does not provide.
 

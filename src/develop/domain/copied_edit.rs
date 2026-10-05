@@ -35,8 +35,11 @@ mod tests {
     use super::*;
     use crate::color::domain::illuminant::Illuminant;
     use crate::develop::domain::adjustments::Adjustments;
+    use crate::develop::domain::color_grading::{ColorGrading, TonalZone, ZoneGrade};
+    use crate::develop::domain::color_mixer::{ColorMixer, ColorRange};
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::{Mask, MaskShape};
+    use crate::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
     use crate::develop::domain::white_balance::WhiteBalance;
 
     const RAW: PhotoKind = PhotoKind::Raw {
@@ -82,6 +85,31 @@ mod tests {
             copied.pasted_onto(&Edit::default(), &OTHER_RAW),
             kelvin_edit()
         );
+    }
+
+    #[test]
+    fn paste_across_kinds_carries_the_curves_the_color_mixer_and_the_color_grading() {
+        let mut color_mixer = ColorMixer::default();
+        color_mixer.hue[ColorRange::Orange] = 20.0;
+        let warm = ZoneGrade {
+            hue: 40.0,
+            saturation: 25.0,
+            luminance: 0.0,
+        };
+        let lifted = ToneCurve::default().with_point_moved(0, [0.0, 0.1]);
+        let toned = Edit {
+            tone_curves: ToneCurves::default().with(CurveChannel::Blue, lifted),
+            color_mixer,
+            color_grading: ColorGrading::default().with(TonalZone::Highlights, warm),
+            ..Edit::default()
+        };
+        let copied = CopiedEdit::of(toned.clone(), &RAW);
+
+        let pasted = copied.pasted_onto(&relative_edit(), &PhotoKind::StandardImage);
+
+        assert_eq!(pasted.tone_curves, toned.tone_curves);
+        assert_eq!(pasted.color_mixer, toned.color_mixer);
+        assert_eq!(pasted.color_grading, toned.color_grading);
     }
 
     #[test]

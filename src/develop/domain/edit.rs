@@ -3,7 +3,10 @@ use std::ops::RangeInclusive;
 use serde::{Deserialize, Serialize};
 
 use super::adjustments::Adjustments;
+use super::color_grading::ColorGrading;
+use super::color_mixer::ColorMixer;
 use super::mask::{CoverageSource, Mask, MaskShape};
+use super::tone_curve::ToneCurves;
 
 pub const MOST_MASKS: usize = 16;
 
@@ -16,6 +19,9 @@ pub struct Edit {
     pub masks: Vec<Mask>,
     /// How much of the photo's enhancement is mixed in, 0 … 100.
     pub enhancement_intensity: f32,
+    pub tone_curves: ToneCurves,
+    pub color_mixer: ColorMixer,
+    pub color_grading: ColorGrading,
 }
 
 pub const FULL_INTENSITY: f32 = 100.0;

@@ -25,6 +25,12 @@ fn shape(area: Rect, heights: &LevelHeights, fill: Color32) -> egui::Mesh {
     mesh
 }
 
+/// The channels shape and, over it, the luminance shape, across `area`.
+pub fn paint_histogram(painter: &egui::Painter, area: Rect, histogram: &Histogram) {
+    painter.add(shape(area, &histogram.channel_heights(), CHANNELS_FILL));
+    painter.add(shape(area, &histogram.luminance_heights(), LUMINANCE_FILL));
+}
+
 /// The place of the histogram, empty while there is none to show.
 pub fn histogram_plot(ui: &mut egui::Ui, histogram: Option<&Histogram>) {
     let size = vec2(ui.available_width(), HISTOGRAM_HEIGHT);
@@ -35,6 +41,5 @@ pub fn histogram_plot(ui: &mut egui::Ui, histogram: Option<&Histogram>) {
     let Some(histogram) = histogram else {
         return;
     };
-    painter.add(shape(area, &histogram.channel_heights(), CHANNELS_FILL));
-    painter.add(shape(area, &histogram.luminance_heights(), LUMINANCE_FILL));
+    paint_histogram(&painter, area, histogram);
 }

@@ -8,6 +8,7 @@
    place of the grid separator (K6) survive a relaunch: both ride on `eframe`
    storage, which a headless run does not have. Everything else of M10 is
    verified.
+2. M11 is done. No milestone is framed after it: `/spec` the next one.
 
 ## Blockers
 None.
@@ -285,4 +286,41 @@ find marks, filter and mode again.
   the selected one are developed before they are selected. *Spec*: rule 45 ·
   K19. *Depends*: M10.2. *Tests*: U, HV.
 - ☑ **M10.10 — Demo.** *Spec*: K18. *Depends*: M10.2, M10.3, M10.6, M10.9.
+  *Tests*: HV.
+
+## ☑ M11 — Tone curve and color · 10/10
+Point curve, color mixer and color grading on the photo. Feature F2.
+*Spec*: `specs/curve-and-color.md` (ADR 0014). *Demo*: on the A7 IV RAW, an
+S-curve, lifted blue blacks, greens desaturated, blues darkened, teal shadows
+and orange highlights; quit, relaunch and find the edit again; export.
+
+- ☑ **M11.1 — RGB curve end to end.** Curve in the edit, its engine stage, the
+  Tone curve section with a graph where points are added, moved and removed;
+  live preview. *Spec*: `specs/curve-and-color.md` rules 1, 3, 5, 7–11 ·
+  T1, T2, T3, T4. *Tests*: U, G, Eu, HV.
+- ☑ **M11.2 — Channel curves.** Red, Green and Blue curves, the channel
+  selector and its marks, Reset curve. *Spec*: rules 6, 10, 12 · T3, T5.
+  *Depends*: M11.1. *Tests*: U, G, Eu.
+- ☑ **M11.3 — Histogram behind the graph.** *Spec*: rule 13 · T6.
+  *Depends*: M11.1. *Tests*: Eu, HV.
+- ☑ **M11.4 — Color mixer in the engine.** Hue, Saturation and Luminance of
+  the eight color ranges in the edit and the display stage. *Spec*: rules
+  15–18 · T1, T7, T8. *Tests*: U, G.
+- ☑ **M11.5 — Color mixer section.** Hue / Saturation / Luminance selector,
+  eight sliders with colored tracks, marks. *Spec*: rules 14, 19, 20 · T9.
+  *Depends*: M11.4. *Tests*: Eu, HV.
+- ☑ **M11.6 — Color grading in the engine.** Four tonal zones, Blending and
+  Balance in the edit and the display stage. *Spec*: rules 26–30 · T1, T10,
+  T11. *Tests*: U, G.
+- ☑ **M11.7 — Color wheel and zone views.** The wheel component; Shadows,
+  Midtones, Highlights and Global views with their sliders, Blending and
+  Balance, the selector and its marks. *Spec*: rules 21, 23–25, 31 · T12, T13.
+  *Depends*: M11.6. *Tests*: Eu, HV.
+- ☑ **M11.8 — 3-way view.** Three wheels together with their Luminance.
+  *Spec*: rule 22 · T13. *Depends*: M11.7. *Tests*: Eu, HV.
+- ☑ **M11.9 — The three tools with the rest of the app.** Section order and
+  masks, sidecar version, undo and redo, Before, Reset, paste, export, order
+  independence. *Spec*: rules 1, 2, 4, 32–36 · T14–T18. *Depends*: M11.2,
+  M11.5, M11.8. *Tests*: U, G, Eb, Eu.
+- ☑ **M11.10 — Demo.** *Spec*: rule 37 · T19. *Depends*: M11.3, M11.9.
   *Tests*: HV.

@@ -3,8 +3,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ziv::develop::domain::adjustments::Adjustments;
+use ziv::develop::domain::color_grading::ZoneGrade;
+use ziv::develop::domain::color_mixer::ColorRange;
 use ziv::develop::domain::coverage_image::CoverageImage;
 use ziv::develop::domain::mask::{Mask, MaskShape};
+use ziv::develop::domain::tone_curve::ToneCurve;
 use ziv::develop::domain::zone::{Zone, ZoneMask};
 
 use ziv::develop::domain::edit::Edit;
@@ -59,6 +62,25 @@ fn zone_mask_is_stored_with_its_coverage() {
     SidecarFiles.store_edit(&photo, &edit).unwrap();
 
     assert_eq!(files_of(folder.path()), ["DSC07070.ARW.ziv.json"]);
+    assert_eq!(SidecarFiles.stored_edit(&photo), Ok(Some(edit)));
+}
+
+#[test]
+fn tone_curve_color_mixer_and_color_grading_are_stored_with_the_edit() {
+    let folder = tempfile::tempdir().unwrap();
+    let photo = photo_in(&folder);
+    let mut edit = brighter();
+    edit.tone_curves.blue = ToneCurve::try_from(vec![[0.0, 0.15], [1.0, 1.0]]).unwrap();
+    edit.color_mixer.saturation[ColorRange::Green] = -40.0;
+    edit.color_grading.shadows = ZoneGrade {
+        hue: 185.0,
+        saturation: 30.0,
+        luminance: -5.0,
+    };
+    edit.color_grading.balance = 20.0;
+
+    SidecarFiles.store_edit(&photo, &edit).unwrap();
+
     assert_eq!(SidecarFiles.stored_edit(&photo), Ok(Some(edit)));
 }
 

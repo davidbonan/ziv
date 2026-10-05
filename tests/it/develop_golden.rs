@@ -4,6 +4,8 @@ use ziv::color::domain::illuminant::Illuminant;
 use ziv::color::domain::working_space::DisplayTransform;
 use ziv::develop::domain::adjustments::Adjustments;
 use ziv::develop::domain::brush::{BrushMask, Stroke};
+use ziv::develop::domain::color_grading::{ColorGrading, TonalZone, ZoneGrade};
+use ziv::develop::domain::color_mixer::{ColorMixer, ColorRange};
 use ziv::develop::domain::coverage_image::CoverageImage;
 use ziv::develop::domain::development::Development;
 use ziv::develop::domain::edit::Edit;
@@ -13,15 +15,17 @@ use ziv::develop::domain::overlay::overlaid;
 use ziv::develop::domain::polygon::Polygon;
 use ziv::develop::domain::radial_gradient::RadialGradient;
 use ziv::develop::domain::rectangle::Rectangle;
+use ziv::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
 use ziv::develop::domain::white_balance::WhiteBalance;
 use ziv::develop::domain::zone::{Zone, ZoneMask};
 use ziv::engine::infrastructure::display_readback::DisplayPixels;
 use ziv::engine::infrastructure::display_stage::DisplayRequest;
 use ziv::photo::domain::photo_kind::PhotoKind;
+use ziv::photo::domain::working_image::WorkingImage;
 
 use crate::golden::assert_matches_golden;
 use crate::gpu::headless_engine;
-use crate::synthetic::{HEIGHT, WIDTH, ramp_and_patches};
+use crate::synthetic::{HEIGHT, WIDTH, hues_and_named_colors, ramp_and_patches};
 
 const RAW: PhotoKind = PhotoKind::Raw {
     as_shot: Illuminant {
@@ -31,8 +35,12 @@ const RAW: PhotoKind = PhotoKind::Raw {
 };
 
 fn developed(development: Development) -> DisplayPixels {
+    developed_from(&ramp_and_patches(), development)
+}
+
+fn developed_from(image: &WorkingImage, development: Development) -> DisplayPixels {
     let engine = headless_engine();
-    let source = engine.upload(&ramp_and_patches());
+    let source = engine.upload(image);
     let request = DisplayRequest {
         development,
         ..DisplayRequest::whole_source([WIDTH, HEIGHT])
@@ -54,8 +62,15 @@ fn pixel_centres() -> impl Iterator<Item = PhotoPoint> {
 }
 
 fn assert_renders(development: &Development, expected: impl Fn([f32; 3], PhotoPoint) -> [f32; 3]) {
-    let rendered = developed(development.clone());
-    let image = ramp_and_patches();
+    assert_renders_from(&ramp_and_patches(), development, expected);
+}
+
+fn assert_renders_from(
+    image: &WorkingImage,
+    development: &Development,
+    expected: impl Fn([f32; 3], PhotoPoint) -> [f32; 3],
+) {
+    let rendered = developed_from(image, development.clone());
     let pixels = image.pixels().iter().zip(pixel_centres());
     for (rendered, (working, centre)) in rendered.rgba.as_chunks::<4>().0.iter().zip(pixels) {
         let expected = expected(*working, centre).map(|channel| (channel * 255.0).round() as u8);
@@ -186,6 +201,285 @@ fn saturation_matches_its_golden_and_the_domain() {
     });
 
     assert_adjustment_matches_its_golden_and_the_domain("develop_saturation_minus_60", duller);
+}
+
+fn curved(points: &[[f32; 2]]) -> Edit {
+    Edit {
+        tone_curves: ToneCurves {
+            rgb: ToneCurve::try_from(points.to_vec()).unwrap(),
+            ..ToneCurves::default()
+        },
+        ..Edit::default()
+    }
+}
+
+fn curved_on(channel: CurveChannel, points: &[[f32; 2]]) -> Edit {
+    let curve = ToneCurve::try_from(points.to_vec()).unwrap();
+    Edit {
+        tone_curves: ToneCurves::default().with(channel, curve),
+        ..Edit::default()
+    }
+}
+
+#[test]
+fn each_channel_tone_curve_matches_its_golden_and_the_domain() {
+    let raised_middle = [[0.0, 0.0], [0.5, 0.7], [1.0, 1.0]];
+    let channels = [
+        ("develop_tone_curve_red_raised", CurveChannel::Red),
+        ("develop_tone_curve_green_raised", CurveChannel::Green),
+        ("develop_tone_curve_blue_raised", CurveChannel::Blue),
+    ];
+
+    for (golden, channel) in channels {
+        let edit = curved_on(channel, &raised_middle);
+        assert_adjustment_matches_its_golden_and_the_domain(golden, edit);
+    }
+}
+
+#[test]
+fn the_four_tone_curves_combined_agree_with_the_domain() {
+    let lifted_blue_blacks = ToneCurve::try_from(vec![[0.0, 0.15], [1.0, 1.0]]).unwrap();
+    let lowered_red = ToneCurve::try_from(vec![[0.0, 0.0], [0.5, 0.35], [1.0, 1.0]]).unwrap();
+    let s_curve = curved(&[[0.0, 0.0], [0.25, 0.12], [0.75, 0.88], [1.0, 1.0]]);
+    let combined = Edit {
+        tone_curves: s_curve
+            .tone_curves
+            .clone()
+            .with(CurveChannel::Blue, lifted_blue_blacks)
+            .with(CurveChannel::Red, lowered_red),
+        ..s_curve
+    };
+
+    assert_shader_agrees_with_the_domain(&edited(combined));
+}
+
+#[test]
+fn rgb_tone_curve_matches_its_golden_and_the_domain() {
+    let s_curve = curved(&[[0.0, 0.0], [0.25, 0.12], [0.75, 0.88], [1.0, 1.0]]);
+
+    assert_adjustment_matches_its_golden_and_the_domain("develop_tone_curve_rgb_s", s_curve);
+}
+
+#[test]
+fn tone_curve_with_moved_end_points_agrees_with_the_domain() {
+    let faded = curved(&[[0.1, 0.2], [0.5, 0.6], [0.9, 0.8]]);
+
+    assert_shader_agrees_with_the_domain(&edited(faded));
+}
+
+#[test]
+fn tone_curve_on_a_camera_like_rendering_agrees_with_the_domain() {
+    let development = Development {
+        kind: RAW,
+        edit: curved(&[[0.0, 0.0], [0.3, 0.45], [1.0, 1.0]]),
+    };
+
+    assert_shader_agrees_with_the_domain(&development);
+}
+
+fn mixed(adjust: impl Fn(&mut ColorMixer)) -> Edit {
+    let mut color_mixer = ColorMixer::default();
+    adjust(&mut color_mixer);
+    Edit {
+        color_mixer,
+        ..Edit::default()
+    }
+}
+
+fn assert_colors_match_their_golden_and_the_domain(golden: &str, development: &Development) {
+    let colors = hues_and_named_colors();
+    let display = DisplayTransform::default();
+
+    assert_matches_golden(golden, &developed_from(&colors, development.clone()));
+    assert_renders_from(&colors, development, |working, centre| {
+        development.to_display(working, centre, &display)
+    });
+}
+
+#[test]
+fn undeveloped_hues_and_named_colors_match_their_golden() {
+    let undeveloped = Development::default();
+
+    assert_colors_match_their_golden_and_the_domain("display_hues_and_named_colors", &undeveloped);
+}
+
+#[test]
+fn color_mixer_hue_matches_its_golden_and_the_domain() {
+    let turned = mixed(|mixer| {
+        mixer.hue[ColorRange::Red] = 100.0;
+        mixer.hue[ColorRange::Green] = -100.0;
+        mixer.hue[ColorRange::Blue] = 100.0;
+    });
+
+    assert_colors_match_their_golden_and_the_domain("develop_color_mixer_hue", &edited(turned));
+}
+
+#[test]
+fn color_mixer_saturation_matches_its_golden_and_the_domain() {
+    let muted_and_vivid = mixed(|mixer| {
+        mixer.saturation[ColorRange::Green] = -100.0;
+        mixer.saturation[ColorRange::Orange] = -100.0;
+        mixer.saturation[ColorRange::Purple] = 60.0;
+    });
+
+    assert_colors_match_their_golden_and_the_domain(
+        "develop_color_mixer_saturation",
+        &edited(muted_and_vivid),
+    );
+}
+
+#[test]
+fn color_mixer_luminance_matches_its_golden_and_the_domain() {
+    let darker_and_brighter = mixed(|mixer| {
+        mixer.luminance[ColorRange::Blue] = -100.0;
+        mixer.luminance[ColorRange::Aqua] = -100.0;
+        mixer.luminance[ColorRange::Yellow] = 100.0;
+    });
+
+    assert_colors_match_their_golden_and_the_domain(
+        "develop_color_mixer_luminance",
+        &edited(darker_and_brighter),
+    );
+}
+
+#[test]
+fn color_mixer_leaves_the_grey_ramp_as_it_was() {
+    let everything = mixed(|mixer| {
+        for range in ColorRange::ALL {
+            mixer.hue[range] = 100.0;
+            mixer.saturation[range] = -100.0;
+            mixer.luminance[range] = 100.0;
+        }
+    });
+    let ramp_rows = (HEIGHT / 2 * WIDTH * 4) as usize;
+
+    let mixed = developed(edited(everything));
+    let untouched = developed(Development::default());
+
+    assert_eq!(mixed.rgba[..ramp_rows], untouched.rgba[..ramp_rows]);
+}
+
+#[test]
+fn color_mixer_on_a_masked_camera_like_rendering_agrees_with_the_domain() {
+    let warmer_left = Mask {
+        adjustments: Adjustments {
+            exposure: 0.8,
+            saturation: 40.0,
+            ..Adjustments::default()
+        },
+        ..Mask::of(MaskShape::LinearGradient(LinearGradient {
+            full: [0.2, 0.25],
+            none: [0.8, 0.25],
+        }))
+    };
+    let edit = Edit {
+        masks: vec![warmer_left],
+        ..mixed(|mixer| {
+            mixer.hue[ColorRange::Red] = -60.0;
+            mixer.saturation[ColorRange::Blue] = 50.0;
+            mixer.luminance[ColorRange::Green] = -70.0;
+        })
+    };
+    let development = Development { kind: RAW, edit };
+    let display = DisplayTransform::default();
+
+    assert_renders_from(&hues_and_named_colors(), &development, |working, centre| {
+        development.to_display(working, centre, &display)
+    });
+}
+
+fn graded(zone: TonalZone, grade: ZoneGrade) -> Edit {
+    Edit {
+        color_grading: ColorGrading::default().with(zone, grade),
+        ..Edit::default()
+    }
+}
+
+#[test]
+fn each_tonal_zone_matches_its_golden_and_the_domain() {
+    let teal_and_brighter = ZoneGrade {
+        hue: 180.0,
+        saturation: 80.0,
+        luminance: 30.0,
+    };
+    let zones = [
+        ("develop_color_grading_shadows", TonalZone::Shadows),
+        ("develop_color_grading_midtones", TonalZone::Midtones),
+        ("develop_color_grading_highlights", TonalZone::Highlights),
+        ("develop_color_grading_global", TonalZone::Global),
+    ];
+
+    for (golden, zone) in zones {
+        let edit = graded(zone, teal_and_brighter);
+        assert_adjustment_matches_its_golden_and_the_domain(golden, edit);
+    }
+}
+
+#[test]
+fn color_grading_with_balance_and_blending_agrees_with_the_domain() {
+    let orange = ZoneGrade {
+        hue: 35.0,
+        saturation: 70.0,
+        luminance: -20.0,
+    };
+    let teal = ZoneGrade {
+        hue: 185.0,
+        saturation: 60.0,
+        luminance: 15.0,
+    };
+    let color_grading = ColorGrading {
+        blending: 15.0,
+        balance: 60.0,
+        ..ColorGrading::default()
+            .with(TonalZone::Highlights, orange)
+            .with(TonalZone::Shadows, teal)
+    };
+
+    assert_shader_agrees_with_the_domain(&edited(Edit {
+        color_grading,
+        ..Edit::default()
+    }));
+}
+
+#[test]
+fn color_grading_under_a_tone_curve_on_a_camera_like_rendering_agrees_with_the_domain() {
+    let magenta = ZoneGrade {
+        hue: 300.0,
+        saturation: 50.0,
+        luminance: 10.0,
+    };
+    let edit = Edit {
+        color_grading: ColorGrading::default().with(TonalZone::Midtones, magenta),
+        ..curved(&[[0.0, 0.05], [0.4, 0.5], [1.0, 0.95]])
+    };
+
+    assert_shader_agrees_with_the_domain(&Development { kind: RAW, edit });
+}
+
+#[test]
+fn a_masked_area_gets_the_curve_the_color_mixer_and_the_color_grading_like_the_rest() {
+    let brighter_left = Mask {
+        adjustments: Adjustments {
+            exposure: 1.0,
+            ..Adjustments::default()
+        },
+        ..Mask::of(MaskShape::LinearGradient(LinearGradient {
+            full: [0.2, 0.25],
+            none: [0.8, 0.25],
+        }))
+    };
+    let mut edit = Edit {
+        masks: vec![brighter_left],
+        ..curved(&[[0.0, 0.0], [0.25, 0.15], [0.75, 0.85], [1.0, 1.0]])
+    };
+    edit.color_mixer.saturation[ColorRange::Red] = -80.0;
+    edit.color_grading.global = ZoneGrade {
+        hue: 200.0,
+        saturation: 40.0,
+        luminance: 0.0,
+    };
+
+    assert_shader_agrees_with_the_domain(&edited(edit));
 }
 
 #[test]

@@ -52,6 +52,23 @@ struct DisplayStage {
     overlay: vec4f,
     // shortest gradient squared, smallest radius or feather, reach of a full feather
     mask_limits: vec4f,
+    // 1 when the tone curves apply else 0
+    tone_curves: vec4f,
+    // chroma under which a color fades out of its range, 1 when the color mixer applies else 0
+    color_mixer: vec4f,
+    // per color range, in the order of the hues:
+    // centre (radians), hue turn (radians), chroma scale, lightness scale
+    color_ranges: array<vec4f, 8>,
+    working_to_lms: array<vec4f, 3>,
+    lms_to_lab: array<vec4f, 3>,
+    lab_to_lms: array<vec4f, 3>,
+    lms_to_working: array<vec4f, 3>,
+    // display luma weights .rgb, 1 when color grading applies else 0
+    grading_luma: vec4f,
+    // balance exponent, half the passage between two zones, shadows edge, highlights edge
+    grading_zones: vec4f,
+    // what a tone fully in a zone is moved by: shadows, midtones, highlights, global
+    grading_offsets: array<vec4f, 4>,
     adjustments: Adjustments,
     masks: array<Mask, 16>,
     // the mask whose coverage the overlay shows
@@ -62,8 +79,9 @@ struct DisplayStage {
 @group(0) @binding(1) var source: texture_2d<f32>;
 @group(0) @binding(2) var source_sampler: sampler;
 @group(0) @binding(3) var coverage_layers: texture_2d_array<f32>;
-@group(0) @binding(4) var coverage_sampler: sampler;
+@group(0) @binding(4) var linear_sampler: sampler;
 @group(0) @binding(5) var enhancement: texture_2d<f32>;
+@group(0) @binding(6) var tone_curve_lookup: texture_2d<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
@@ -228,7 +246,7 @@ fn shape_coverage(mask: Mask, point: vec2f) -> f32 {
     }
     if kind == COVERAGE_LAYER {
         let layer = i32(mask.coverage.w);
-        return textureSampleLevel(coverage_layers, coverage_sampler, point / stage.photo.xy, layer, 0.0).r;
+        return textureSampleLevel(coverage_layers, linear_sampler, point / stage.photo.xy, layer, 0.0).r;
     }
     return linear_gradient_coverage(mask.geometry, point);
 }
@@ -238,6 +256,55 @@ fn coverage(mask: Mask, point: vec2f) -> f32 {
     return mix(covered, 1.0 - covered, mask.coverage.x);
 }
 
+const TURN: f32 = 6.283185307179586;
+const RANGE_COUNT: u32 = 8u;
+
+fn through(matrix: array<vec4f, 3>, colour: vec3f) -> vec3f {
+    return vec3f(
+        dot(matrix[0].xyz, colour),
+        dot(matrix[1].xyz, colour),
+        dot(matrix[2].xyz, colour),
+    );
+}
+
+fn cube_root(lms: vec3f) -> vec3f {
+    return sign(lms) * pow(abs(lms), vec3f(1.0 / 3.0));
+}
+
+// What a color of this hue gets: a share of the two ranges it sits between.
+fn range_factors_at(hue_from_axis: f32) -> vec4f {
+    let first = stage.color_ranges[0];
+    let hue = select(hue_from_axis, hue_from_axis + TURN, hue_from_axis < first.x);
+    var before = stage.color_ranges[RANGE_COUNT - 1u];
+    var next = vec4f(first.x + TURN, first.yzw);
+    for (var index = 1u; index < RANGE_COUNT; index++) {
+        if hue < stage.color_ranges[index].x {
+            before = stage.color_ranges[index - 1u];
+            next = stage.color_ranges[index];
+            break;
+        }
+    }
+    let share = smooth_step((hue - before.x) / (next.x - before.x));
+    return vec4f(hue, mix(before.yzw, next.yzw, share));
+}
+
+fn color_mixed(working: vec3f) -> vec3f {
+    let lab = through(stage.lms_to_lab, cube_root(through(stage.working_to_lms, working)));
+    let chroma = length(lab.yz);
+    if stage.color_mixer.y == 0.0 || chroma <= 0.0 {
+        return working;
+    }
+    // hue, hue turn, chroma scale, lightness scale
+    let factors = range_factors_at(atan2(lab.z, lab.y));
+    let fade = smooth_step(chroma / stage.color_mixer.x);
+    let turned = factors.x + factors.y * fade;
+    let scaled = chroma * factors.z;
+    let lightened = 1.0 + (factors.w - 1.0) * fade;
+    let mixed = vec3f(lab.x, scaled * cos(turned), scaled * sin(turned)) * lightened;
+    let lms = through(stage.lab_to_lms, mixed);
+    return through(stage.lms_to_working, lms * lms * lms);
+}
+
 fn develop(working: vec3f, point: vec2f) -> vec3f {
     var colour = adjusted(working, stage.adjustments);
     let mask_count = u32(stage.photo.z);
@@ -245,7 +312,7 @@ fn develop(working: vec3f, point: vec2f) -> vec3f {
         let locally = adjusted(colour, stage.masks[mask_index].adjustments);
         colour = mix(colour, locally, coverage(stage.masks[mask_index], point));
     }
-    return colour;
+    return color_mixed(colour);
 }
 
 fn base_rendered(linear: vec3f) -> vec3f {
@@ -262,6 +329,36 @@ fn enhanced(uv: vec2f) -> vec3f {
     return mix(original, enhancement, stage.photo.w);
 }
 
+// How much of a tone is past the passage centred on `edge`.
+fn past_zone_edge(edge: f32, tone: f32) -> f32 {
+    let passage = stage.grading_zones.y;
+    return smooth_step((tone - (edge - passage)) / (2.0 * passage));
+}
+
+fn color_graded(encoded: vec3f) -> vec3f {
+    let luma = clamp(dot(stage.grading_luma.rgb, encoded), 0.0, 1.0);
+    let tone = pow(luma, stage.grading_zones.x);
+    let past_shadows = past_zone_edge(stage.grading_zones.z, tone);
+    let in_highlights = past_zone_edge(stage.grading_zones.w, tone);
+    let moved = (1.0 - past_shadows) * stage.grading_offsets[0].rgb
+        + (past_shadows - in_highlights) * stage.grading_offsets[1].rgb
+        + in_highlights * stage.grading_offsets[2].rgb
+        + stage.grading_offsets[3].rgb;
+    let graded = clamp(encoded + moved, vec3f(0.0), vec3f(1.0));
+    return mix(encoded, graded, stage.grading_luma.w);
+}
+
+fn tone_curved(encoded: vec3f) -> vec3f {
+    let size = f32(textureDimensions(tone_curve_lookup).x);
+    let at = (encoded * (size - 1.0) + vec3f(0.5)) / size;
+    let curved = vec3f(
+        textureSampleLevel(tone_curve_lookup, linear_sampler, vec2f(at.r, 0.5), 0.0).r,
+        textureSampleLevel(tone_curve_lookup, linear_sampler, vec2f(at.g, 0.5), 0.0).g,
+        textureSampleLevel(tone_curve_lookup, linear_sampler, vec2f(at.b, 0.5), 0.0).b,
+    );
+    return mix(encoded, curved, stage.tone_curves.x);
+}
+
 @fragment
 fn fragment(input: VertexOutput) -> @location(0) vec4f {
     let point = input.uv * stage.photo.xy;
@@ -271,7 +368,8 @@ fn fragment(input: VertexOutput) -> @location(0) vec4f {
         dot(stage.working_to_display_green.xyz, working),
         dot(stage.working_to_display_blue.xyz, working),
     );
-    let display = encode(clamp(base_rendered(linear), vec3f(0.0), vec3f(1.0)));
+    let encoded = encode(clamp(base_rendered(linear), vec3f(0.0), vec3f(1.0)));
+    let display = tone_curved(color_graded(encoded));
     let veil = coverage(stage.overlaid, point) * stage.overlay.a;
     return vec4f(mix(display, stage.overlay.rgb, veil), 1.0);
 }

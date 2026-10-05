@@ -7,7 +7,8 @@ use super::edit::Edit;
 /// 2: masks. A reader of version 1 would drop them and overwrite the file.
 /// 3: zone masks, which a reader of version 2 cannot read.
 /// 4: enhancement intensity, which a reader of version 3 would drop.
-pub const CURRENT_VERSION: u32 = 4;
+/// 5: tone curves, color mixer and color grading, which a reader of version 4 would drop.
+pub const CURRENT_VERSION: u32 = 5;
 
 #[derive(Serialize, Deserialize)]
 struct EditDocument {
@@ -65,12 +66,15 @@ mod tests {
     use std::sync::Arc;
 
     use crate::develop::domain::brush::{BrushMask, Stroke};
+    use crate::develop::domain::color_grading::{ColorGrading, TonalZone, ZoneGrade};
+    use crate::develop::domain::color_mixer::{ColorMixer, ColorRange};
     use crate::develop::domain::coverage_image::CoverageImage;
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::{Mask, MaskShape};
     use crate::develop::domain::polygon::Polygon;
     use crate::develop::domain::radial_gradient::RadialGradient;
     use crate::develop::domain::rectangle::Rectangle;
+    use crate::develop::domain::tone_curve::{ToneCurve, ToneCurves};
     use crate::develop::domain::white_balance::WhiteBalance;
     use crate::develop::domain::zone::{Zone, ZoneMask};
 
@@ -104,11 +108,11 @@ mod tests {
 
     #[test]
     fn a_document_from_a_newer_ziv_is_refused() {
-        let document = r#"{ "version": 5, "exposure": 1.5 }"#;
+        let document = r#"{ "version": 6, "exposure": 1.5 }"#;
 
         assert_eq!(
             edit_of_document(document),
-            Err(DocumentError::FromNewerZiv { version: 5 })
+            Err(DocumentError::FromNewerZiv { version: 6 })
         );
     }
 
@@ -163,12 +167,17 @@ mod tests {
         let edit = Edit {
             masks: masks.collect(),
             enhancement_intensity: 60.0,
+            tone_curves: ToneCurves {
+                rgb: ToneCurve::try_from(vec![[0.0, 0.1], [0.4, 0.3], [1.0, 0.9]]).unwrap(),
+                blue: ToneCurve::try_from(vec![[0.0, 0.2], [1.0, 1.0]]).unwrap(),
+                ..ToneCurves::default()
+            },
             ..edited()
         };
 
         let document = edit_document(&edit);
 
-        assert!(document.contains(r#""version": 4"#));
+        assert!(document.contains(r#""version": 5"#));
         assert_eq!(edit_of_document(&document), Ok(edit));
     }
 
@@ -203,6 +212,51 @@ mod tests {
 
         assert_eq!((edit.adjustments.exposure, edit.masks.len()), (1.5, 0));
         assert_eq!(edit.enhancement_intensity, 0.0);
+    }
+
+    #[test]
+    fn a_version_4_document_is_an_edit_with_the_curve_and_color_tools_at_their_defaults() {
+        let document = r#"{ "version": 4, "exposure": 1.5, "enhancement_intensity": 60.0 }"#;
+
+        let edit = edit_of_document(document).unwrap();
+
+        assert_eq!(edit.enhancement_intensity, 60.0);
+        assert!(edit.tone_curves.is_identity());
+        assert_eq!(edit.color_mixer, ColorMixer::default());
+        assert_eq!(edit.color_grading, ColorGrading::default());
+    }
+
+    #[test]
+    fn color_mixer_and_color_grading_are_read_back_as_they_were_written() {
+        let mut color_mixer = ColorMixer::default();
+        color_mixer.saturation[ColorRange::Green] = -40.0;
+        color_mixer.luminance[ColorRange::Blue] = -25.0;
+        let teal = ZoneGrade {
+            hue: 185.0,
+            saturation: 30.0,
+            luminance: -5.0,
+        };
+        let edit = Edit {
+            color_mixer,
+            color_grading: ColorGrading {
+                blending: 70.0,
+                balance: -15.0,
+                ..ColorGrading::default().with(TonalZone::Shadows, teal)
+            },
+            ..edited()
+        };
+
+        assert_eq!(edit_of_document(&edit_document(&edit)), Ok(edit));
+    }
+
+    #[test]
+    fn a_tone_curve_whose_points_go_leftwards_is_refused() {
+        let document = r#"{ "version": 5, "tone_curves": { "rgb": [[0.6, 0.0], [0.4, 1.0]] } }"#;
+
+        assert!(matches!(
+            edit_of_document(document),
+            Err(DocumentError::NotAnEditDocument(_))
+        ));
     }
 
     #[test]

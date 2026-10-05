@@ -70,6 +70,8 @@ impl EditHistory {
 mod tests {
     use super::*;
     use crate::develop::domain::adjustments::Adjustments;
+    use crate::develop::domain::color_mixer::ColorRange;
+    use crate::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
 
     fn exposed(exposure: f32) -> Edit {
         Edit::from(Adjustments {
@@ -94,6 +96,34 @@ mod tests {
         assert_eq!(*history.current(), exposed(1.0));
         assert!(history.redo());
         assert_eq!(*history.current(), exposed(2.0));
+    }
+
+    #[test]
+    fn a_curve_point_a_mixer_value_and_a_wheel_drag_are_each_one_step() {
+        let curved = Edit {
+            tone_curves: ToneCurves::default().with(
+                CurveChannel::Rgb,
+                ToneCurve::default().with_point_moved(1, [1.0, 0.8]),
+            ),
+            ..Edit::default()
+        };
+        let mut mixed = curved.clone();
+        mixed.color_mixer.saturation[ColorRange::Green] = -30.0;
+        let mut history = changed(&[curved.clone(), mixed.clone()]);
+        history.set_gesture_ongoing(true);
+        for saturation in [10.0, 20.0, 30.0] {
+            let mut graded = mixed.clone();
+            graded.color_grading.shadows.saturation = saturation;
+            history.change(graded);
+        }
+        history.set_gesture_ongoing(false);
+
+        assert!(history.undo());
+        assert_eq!(*history.current(), mixed);
+        assert!(history.undo());
+        assert_eq!(*history.current(), curved);
+        assert!(history.undo());
+        assert_eq!(*history.current(), Edit::default());
     }
 
     #[test]

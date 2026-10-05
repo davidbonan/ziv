@@ -11,8 +11,9 @@ use ziv::develop::domain::mask::{Mask, MaskKind, MaskShape};
 use ziv::develop::domain::radial_gradient::RadialGradient;
 use ziv::develop::domain::zone::{DetectionTool, ZoneTool};
 use ziv::develop::ui::develop_panel::{
-    BRUSH_SIZE_LABEL, DONE_LABEL, DevelopPanelState, EXPOSURE_LABEL, FEATHER_LABEL, INVERT_LABEL,
-    OVERLAY_LABEL, RESET_LABEL, TEMPERATURE_LABEL, develop_panel,
+    BRUSH_SIZE_LABEL, COLOR_GRADING_GROUP_LABEL, COLOR_MIXER_GROUP_LABEL, DONE_LABEL,
+    DevelopPanelState, EXPOSURE_LABEL, FEATHER_LABEL, INVERT_LABEL, OVERLAY_LABEL, RESET_LABEL,
+    TEMPERATURE_LABEL, TONE_CURVE_GROUP_LABEL, develop_panel,
 };
 use ziv::develop::ui::masks_section::{
     BACKGROUND_TOOL_LABEL, LINEAR_GRADIENT_TOOL_LABEL, MaskSelection, PEOPLE_TOOL_LABEL,
@@ -225,6 +226,22 @@ fn invert_swaps_what_the_selected_mask_covers() {
 
     assert!(harness.state().edit.masks[1].is_inverted);
     assert!(!harness.state().edit.masks[0].is_inverted);
+}
+
+#[test]
+fn tone_curve_color_mixer_and_color_grading_belong_to_the_photo_not_to_a_mask() {
+    let sections = [
+        TONE_CURVE_GROUP_LABEL,
+        COLOR_MIXER_GROUP_LABEL,
+        COLOR_GRADING_GROUP_LABEL,
+    ];
+    let of_the_photo = panel(two_masks());
+    let of_a_mask = panel(selecting(0, two_masks()));
+
+    for section in sections {
+        assert!(of_the_photo.query_by_label(section).is_some(), "{section}");
+        assert!(of_a_mask.query_by_label(section).is_none(), "{section}");
+    }
 }
 
 #[test]

@@ -19,6 +19,7 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 - `specs/testing.md` — feedback loop: unit / business e2e / golden image / UI e2e.
 - `specs/import.md` — F1: opening photos, filmstrip, viewport zoom and pan.
 - `specs/develop.md` — F2: develop panel, base rendering, sidecar, undo, before/after.
+- `specs/curve-and-color.md` — F2: tone curve, color mixer, color grading (M11).
 - `specs/adr/` — one file per technical decision (`/adr`).
 - `specs/<feature>.md` — product intent per feature (`/spec`).
 
