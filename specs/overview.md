@@ -17,6 +17,7 @@ imported series again at the next launch.
 | F8 | Window shell — top bar, layout, tools as icons, folding sections | [`shell.md`](shell.md) |
 | F9 | Histogram and shooting data — at the top of the develop panel | [`histogram.md`](histogram.md) |
 | F7 | Series catalog — imports kept as series in a sidebar, work resumed at the next launch | [`catalog.md`](catalog.md) |
+| F10 | Culling — grid and fast preview, ratings, rejected mark, series filter, removal and Trash | [`culling.md`](culling.md) |
 
 A feature has no spec until `/spec` writes `specs/<feature>.md`.
 
@@ -31,11 +32,12 @@ Changed only through a new ADR (`specs/adr/`).
 | RAW decoding | `rawler` (pure Rust, LGPL-2.1) | 0001 |
 | Platform | macOS Apple Silicon first; code kept portable, other OSes untested | 0001 |
 | Crate layout | single `ziv` crate, lib + bin | 0001 |
-| Edits | non-destructive: source file never written | 0001 |
+| Edits | non-destructive: the content of a source file is never written; a source file leaves its folder only for the Trash, on a confirmed request | 0001, 0013 |
 | Working color space | linear Rec.2020, D65, unbounded `f32` | 0002 |
 | Display transform | Rec.2020 → Rec.709, clamp, sRGB OETF; last stage | 0002 |
 | Edit persistence | JSON sidecar per photo (`<file name>.ziv.json`), versioned; no edit in the catalog | 0003 |
-| Series catalog | JSON index of the imported series in the user data folder, versioned, frozen photo lists; JPEG thumbnail cache in the user cache folder | 0011 |
+| Series catalog | JSON index of the imported series in the user data folder, versioned; photo lists frozen at import, except photos the user removes or trashes; JPEG thumbnail cache in the user cache folder | 0011, 0013 |
+| Ratings, rejected marks, series filters | in the catalog: marks per photo path, shared by the series holding it; filter per series; no XMP | 0012 |
 | Export output | sRGB 8-bit, untagged; display stage rendered in strips; `image` encoders | 0004 |
 | App settings | `eframe` persistence | 0004 |
 | AI runtime | `ort` 2.0.0-rc.13 (ONNX Runtime), CPU (GPU for the enhancement, 0010); models downloaded at first use, checked by SHA-256 | 0006 |

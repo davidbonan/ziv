@@ -30,13 +30,14 @@ src/lib.rs                       module declarations
 src/app.rs                       ZivApp, run()
 src/design/ui/                   theme (colors, hues, spacing, type), AdjustmentSlider (accent or hue track), icon button and toggle,
                                  primary button, folding section, floating pill, Notice
-src/shell/ui/                    top bar: sidebar button, series and photo names, zoom readout, Before, Export…
+src/shell/domain/                WindowMode: Cull or Develop
+src/shell/ui/                    top bar: sidebar button, series and photo names, mode switch, zoom readout, Before, Export…
 src/color/domain/                primaries, matrices, sRGB transfer, working space, Illuminant
-src/photo/application/           PhotoLoader (worker thread)
-src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, ShootingData, Thumbnail, Orientation, CameraCalibration, DecodeError
-src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`); shooting data from EXIF (`rawler`);
+src/photo/application/           PhotoLoader (worker thread), PhotosAhead (photos loaded before they are asked for)
+src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, ShootingData, PhotoDetails (pixel size, ShotAt, file size), Thumbnail, Orientation, CameraCalibration, DecodeError
+src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`), the picture a RAW embeds as its preview; shooting data from EXIF (`rawler`);
                                  ThumbnailCache (JPEG files in the cache folder)
-src/photo/ui/                    shooting data line
+src/photo/ui/                    shooting data line, photo details lines
 src/histogram/domain/            Histogram: luminance and channel counts per display level, heights, sample size
 src/histogram/infrastructure/    DevelopedHistogram: the photo rendered small by the engine and counted, once per development
 src/histogram/ui/                histogram plot
@@ -58,11 +59,13 @@ src/enhance/ui/                  Detail section (Enhance, Intensity), enhancemen
 src/viewport/domain/             View: fit, zoom, pan → Placement; zoom readout
 src/viewport/infrastructure/     PhotoPresenter: engine output → egui texture
 src/viewport/ui/                 photo_viewport, loading / failed status
-src/library/domain/              Catalog, Series (Import, ImportDay), Session, natural order, the catalog document; port: CatalogStorage
-src/library/application/         StoredCatalog: the catalog, stored as it changes
+src/library/domain/              Catalog, Series (Import, ImportDay), Session, natural order, GridStep, PhotoSelection, Mark and Rating, SeriesFilter,
+                                 the catalog document; ports: CatalogStorage, PhotoTrash
+src/library/application/         StoredCatalog: the catalog, stored as it changes; photos moved to the Trash with the files beside them
 src/library/infrastructure/      photo files among opened paths, native pickers, Finder, CatalogFile (one JSON file in the data folder), today,
-                                 SeriesCovers (cover thumbnails → egui textures, worker thread)
-src/library/ui/                  empty state, filmstrip, series sidebar
+                                 SeriesCovers (cover thumbnails → egui textures, worker thread), SystemTrash (`trash`)
+src/library/ui/                  empty state, photo thumbnail (shared cell painting), filmstrip, photo grid and its header, mark line,
+                                 series filter switch, no photo shown, trash confirmation, series sidebar
 src/models/domain/               Model (its files: address, checksum, size); ports: ModelSource, ModelRunner
 src/models/application/          ModelStore: download at first use, checked, kept
 src/models/infrastructure/       HTTPS downloads, models folder, ONNX Runtime runner (`ort`): CPU, or GPU for a model of fixed shape
@@ -84,6 +87,14 @@ Modules are added by the milestone that needs them, not ahead of it.
 - **UI thread**: egui frames, engine renders at screen resolution, and one
   reduced render read back per change of the development for the histogram
   (about 4 ms, `specs/histogram.md` rule 8); nothing else.
+- **Preview loader** (`PhotoLoader`, one worker, `Backlog::LoadNewestOnly`): in
+  Cull mode, reads the photo details and uploads the picture a RAW embeds, or
+  the decoded photo when there is none. A RAW's picture is then replaced by the
+  RAW the viewed-photo loader develops.
+- **Photos ahead** (`PhotosAhead`, one worker): in Cull mode, develops the
+  shown photos just after and just before the previewed one and keeps them on
+  the GPU; a request no longer wanted when its turn comes is skipped. At most
+  two photos are kept besides the previewed one.
 - **Viewed-photo loader** (`PhotoLoader`, one worker, `Backlog::LoadNewestOnly`):
   decodes a file and uploads it to the GPU (`Engine::upload`; `wgpu::Device` and
   `Queue` are shared across threads). Requests made obsolete while it was busy

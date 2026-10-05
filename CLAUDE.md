@@ -14,6 +14,7 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 - `specs/catalog.md` — series catalog and its sidebar (M7).
 - `specs/shell.md` — top bar, layout, develop panel controls (M8).
 - `specs/histogram.md` — histogram and shooting data in the develop panel (M9).
+- `specs/culling.md` — Cull mode: grid, preview, ratings, series filter, removal and Trash (M10).
 - `specs/mockups/shell.html` — visual reference of the window, direction A.
 - `specs/testing.md` — feedback loop: unit / business e2e / golden image / UI e2e.
 - `specs/import.md` — F1: opening photos, filmstrip, viewport zoom and pan.

@@ -1,11 +1,16 @@
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use rawler::dng::convert::{ConvertParams, convert_raw_file};
 use ziv::develop::domain::development::Development;
 use ziv::engine::infrastructure::display_stage::DisplayRequest;
 use ziv::photo::domain::photo_kind::PhotoKind;
 use ziv::photo::domain::thumbnail::thumbnail_size;
-use ziv::photo::infrastructure::raw_file::{decode_raw_file, decode_raw_thumbnail};
+use ziv::photo::infrastructure::raw_file::{
+    decode_raw_embedded_picture, decode_raw_file, decode_raw_thumbnail,
+};
 
 use crate::gpu::headless_engine;
 
@@ -103,4 +108,42 @@ fn sony_a7m4_raw_tells_the_daylight_it_was_balanced_for() {
         (4000.0..7500.0).contains(&as_shot.temperature) && as_shot.tint.abs() < 60.0,
         "{as_shot:?}"
     );
+}
+
+#[test]
+fn embedded_picture_of_a_raw_is_read_without_developing_its_sensor_data() {
+    let Some(path) = local_sony_a7m4_raw() else {
+        return;
+    };
+
+    let start = Instant::now();
+    let preview = decode_raw_embedded_picture(&path).unwrap().unwrap();
+    eprintln!("embedded picture decoded in {:?}", start.elapsed());
+
+    assert_eq!(preview.kind, PhotoKind::StandardImage);
+    assert_eq!(
+        (preview.image.width(), preview.image.height()),
+        (1616, 1080)
+    );
+    assert_ne!(preview.shooting_data, Default::default());
+}
+
+#[test]
+fn a_raw_embedding_no_picture_gives_none() {
+    let Some(path) = local_sony_a7m4_raw() else {
+        return;
+    };
+    let folder = tempfile::tempdir().unwrap();
+    let without_picture = folder.path().join("bare.dng");
+    let bare = ConvertParams {
+        embedded: false,
+        preview: false,
+        thumbnail: false,
+        ..ConvertParams::default()
+    };
+    let mut file = BufWriter::new(File::create(&without_picture).unwrap());
+    convert_raw_file(&path, &mut file, &bare).unwrap();
+    drop(file);
+
+    assert_eq!(decode_raw_embedded_picture(&without_picture).unwrap(), None);
 }

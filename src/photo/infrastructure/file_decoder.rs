@@ -2,10 +2,15 @@ use std::path::Path;
 
 use crate::photo::domain::decode_error::DecodeError;
 use crate::photo::domain::decoded_photo::DecodedPhoto;
+use crate::photo::domain::photo_details::PhotoDetails;
 use crate::photo::domain::thumbnail::Thumbnail;
 
-use super::raw_file::{decode_raw_file, decode_raw_thumbnail};
-use super::standard_image_file::{decode_standard_image_file, decode_standard_image_thumbnail};
+use super::raw_file::{
+    decode_raw_embedded_picture, decode_raw_file, decode_raw_thumbnail, read_raw_details,
+};
+use super::standard_image_file::{
+    decode_standard_image_file, decode_standard_image_thumbnail, read_standard_image_details,
+};
 
 const STANDARD_IMAGE_EXTENSIONS: [&str; 5] = ["JPG", "JPEG", "PNG", "TIF", "TIFF"];
 
@@ -38,6 +43,32 @@ impl FileDecoder {
             Some(FileKind::StandardImage) => decode_standard_image_file(path),
             Some(FileKind::Raw) => decode_raw_file(path),
             None => Err(DecodeError::new("unsupported file type")),
+        }
+    }
+
+    /// The picture a RAW embeds, read without developing it; `None` for a
+    /// standard image or a RAW that embeds none.
+    pub fn decode_embedded_picture(
+        &self,
+        path: &Path,
+    ) -> Result<Option<DecodedPhoto>, DecodeError> {
+        match file_kind(path) {
+            Some(FileKind::Raw) => decode_raw_embedded_picture(path),
+            _ => Ok(None),
+        }
+    }
+
+    /// What the file says about its photo, without decoding it; nothing for
+    /// what cannot be read.
+    pub fn read_details(&self, path: &Path) -> PhotoDetails {
+        let from_content = match file_kind(path) {
+            Some(FileKind::StandardImage) => read_standard_image_details(path),
+            Some(FileKind::Raw) => read_raw_details(path),
+            None => Ok(PhotoDetails::default()),
+        };
+        PhotoDetails {
+            file_bytes: std::fs::metadata(path).ok().map(|file| file.len()),
+            ..from_content.unwrap_or_default()
         }
     }
 

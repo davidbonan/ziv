@@ -13,12 +13,14 @@ use crate::photo::domain::camera_calibration::CameraCalibration;
 use crate::photo::domain::decode_error::DecodeError;
 use crate::photo::domain::decoded_photo::DecodedPhoto;
 use crate::photo::domain::orientation::Orientation;
+use crate::photo::domain::photo_details::PhotoDetails;
 use crate::photo::domain::photo_kind::PhotoKind;
 use crate::photo::domain::thumbnail::Thumbnail;
 use crate::photo::domain::working_image::WorkingImage;
 
 use super::encoded_thumbnail::thumbnail_of_encoded;
-use super::exif_shooting_data::shooting_data_of;
+use super::exif_shooting_data::{shooting_data_of, shot_at_of};
+use super::standard_image_file::photo_of_encoded;
 
 // rawler's own calibration step targets sRGB and clips; ziv converts to the working space itself.
 const STEPS_UP_TO_CAMERA_RGB: [ProcessingStep; 5] = [
@@ -92,6 +94,55 @@ pub fn decode_raw_file(path: &Path) -> Result<DecodedPhoto, DecodeError> {
         image: stored.upright(orientation),
         kind: PhotoKind::Raw { as_shot },
         shooting_data: shooting_data_of(&metadata.exif),
+    })
+}
+
+/// The largest picture the camera embedded in the file, read without
+/// developing the sensor data; `None` when the file embeds none.
+pub fn decode_raw_embedded_picture(path: &Path) -> Result<Option<DecodedPhoto>, DecodeError> {
+    let source = RawSource::new(path).map_err(|error| DecodeError::new(error.to_string()))?;
+    let decoder = rawler::get_decoder(&source)?;
+    let params = RawDecodeParams::default();
+    let embedded = match decoder.full_image(&source, &params)? {
+        Some(full) => Some(full),
+        None => decoder.preview_image(&source, &params)?,
+    };
+    let Some(embedded) = embedded else {
+        return Ok(None);
+    };
+    let exif = decoder.raw_metadata(&source, &params)?.exif;
+    let orientation = exif
+        .orientation
+        .and_then(Orientation::from_exif)
+        .unwrap_or_default();
+    Ok(Some(photo_of_encoded(
+        embedded,
+        orientation,
+        shooting_data_of(&exif),
+    )))
+}
+
+/// Read from the head of the file: the sensor data is not decoded.
+pub fn read_raw_details(path: &Path) -> Result<PhotoDetails, DecodeError> {
+    let source = RawSource::new(path).map_err(|error| DecodeError::new(error.to_string()))?;
+    let decoder = rawler::get_decoder(&source)?;
+    let params = RawDecodeParams::default();
+    let is_dummy = true;
+    let raw = decoder.raw_image(&source, &params, is_dummy)?;
+    let exif = decoder.raw_metadata(&source, &params)?.exif;
+    let orientation = exif
+        .orientation
+        .and_then(Orientation::from_exif)
+        .unwrap_or_default();
+    let developed = raw.crop_area.or(raw.active_area).map(|area| area.d);
+    let stored = match developed {
+        Some(size) => [size.w as u32, size.h as u32],
+        None => [raw.width as u32, raw.height as u32],
+    };
+    Ok(PhotoDetails {
+        pixel_size: Some(orientation.upright_size(stored)),
+        shot_at: shot_at_of(&exif),
+        file_bytes: None,
     })
 }
 

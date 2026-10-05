@@ -4,7 +4,10 @@
 > `☐` to do · `◐` in progress · `☑` done+verified · `⊘` blocked · `⏭` deferred.
 
 ## Next actions
-1. None planned: every milestone of the plan is done.
+1. M10.1, M10.3 — check by hand in the real app that the mode (K2) and the
+   place of the grid separator (K6) survive a relaunch: both ride on `eframe`
+   storage, which a headless run does not have. Everything else of M10 is
+   verified.
 
 ## Blockers
 None.
@@ -240,3 +243,46 @@ a series, the histogram following an edit, the shooting data under it.
 - ☑ **M9.4 — Shooting data in the develop panel.** The line under the
   histogram. *Spec*: rule 9 · H8. *Depends*: M9.2, M9.3. *Tests*: Eu, HV.
 - ☑ **M9.5 — Demo.** *Spec*: H9. *Depends*: M9.4. *Tests*: HV.
+
+## ◐ M10 — Culling · 9/11
+Sort a series in ziv instead of Bridge: grid and fast preview, ratings, rejected
+mark, series filter, removal and Trash. Feature F10. *Spec*: `specs/culling.md` (ADR 0012, 0013).
+*Demo*: import a folder, rate and reject in Cull mode, trash the rejected,
+filter at 2 stars or more, develop only the kept photos; quit, relaunch and
+find marks, filter and mode again.
+
+- ◐ **M10.1 — Cull mode end to end.** Mode switch in the top bar, `G` and `D`,
+  mode remembered; grid of the open series with click and arrow selection,
+  beside the preview of the selected photo at fit. *Spec*: `specs/culling.md`
+  rules 1–11, 16, 20 · K1, K2, K3. *Tests*: U, Eu, HV.
+- ☑ **M10.2 — Embedded preview.** The preview of a RAW comes from its embedded
+  picture without decoding the sensor data; fallback to the unedited
+  development; zoom and pan. *Spec*: rules 16–19 · K7, K8. *Depends*: M10.1.
+  *Tests*: U, Eb, Eu.
+- ◐ **M10.3 — Photo details and separator.** Name, shooting data, pixel size,
+  date, file size under the preview; resizable separator, remembered.
+  *Spec*: rules 15, 21, 22 · K6, K9. *Depends*: M10.1. *Tests*: U, Eb, Eu, HV.
+- ☑ **M10.4 — Selection of several photos.** `Cmd`+click, `Shift`+click,
+  `Cmd+A`, the count in the details; double click and `Enter` to Develop.
+  *Spec*: rules 12–14, 23 · K4, K5, K9. *Depends*: M10.1. *Tests*: U, Eu.
+- ☑ **M10.5 — Marks.** Ratings and rejected mark by keys and stars, on the
+  selection, in both modes, shown in grid, filmstrip and details, kept between
+  launches. *Spec*: rules 7, 24–29 · K10, K11. *Depends*: M10.4.
+  *Tests*: U, Eb, Eu.
+- ☑ **M10.6 — Series filter.** Filter in the top bar, applied to grid and
+  filmstrip, position counting shown photos, selection following, empty
+  result, remembered per series. *Spec*: rules 30–37 · K12, K13, K14.
+  *Depends*: M10.5. *Tests*: U, Eb, Eu.
+- ☑ **M10.7 — Remove from series.** `Delete` and the cell menu; neighbor
+  selected; emptied series leaves the catalog. *Spec*: rules 38, 41, 42 · K15.
+  *Depends*: M10.4. *Tests*: U, Eb, Eu.
+- ☑ **M10.8 — Move to Trash.** Confirmation, photo and the files beside it to
+  the Trash, failures counted, missing in other series. *Spec*: rules 39,
+  41–44 · K16, K17. *Depends*: M10.7. *Tests*: U, Eb, Eu.
+- ☑ **M10.9 — Trash rejected.** *Spec*: rule 40 · K16. *Depends*: M10.5, M10.8.
+  *Tests*: U, Eu.
+- ☑ **M10.11 — Photos developed ahead.** The shown photos after and before
+  the selected one are developed before they are selected. *Spec*: rule 45 ·
+  K19. *Depends*: M10.2. *Tests*: U, HV.
+- ☑ **M10.10 — Demo.** *Spec*: K18. *Depends*: M10.2, M10.3, M10.6, M10.9.
+  *Tests*: HV.

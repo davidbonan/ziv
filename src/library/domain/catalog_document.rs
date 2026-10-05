@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::Catalog;
 
-pub const CURRENT_VERSION: u32 = 1;
+pub const CURRENT_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct CatalogDocument {
@@ -65,6 +65,7 @@ mod tests {
 
     use super::*;
     use crate::library::domain::import_day::ImportDay;
+    use crate::library::domain::mark::Rating;
     use crate::library::domain::series::{Import, Series};
 
     fn catalog_of_two_series() -> Catalog {
@@ -98,6 +99,24 @@ mod tests {
         let document = catalog_document(&catalog).unwrap();
 
         assert_eq!(catalog_of_document(&document), Ok(catalog));
+    }
+
+    #[test]
+    fn marks_survive_the_document() {
+        let mut catalog = catalog_of_two_series();
+        catalog.rate(&[0, 1], Rating::of(4));
+        catalog.toggle_rejected(&[1]);
+
+        let document = catalog_document(&catalog).unwrap();
+
+        assert_eq!(catalog_of_document(&document), Ok(catalog));
+    }
+
+    #[test]
+    fn document_written_before_marks_existed_is_read_without_any() {
+        let document = r#"{ "version": 1, "series": [], "open": null }"#;
+
+        assert_eq!(catalog_of_document(document), Ok(Catalog::default()));
     }
 
     #[test]

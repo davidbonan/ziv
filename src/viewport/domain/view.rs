@@ -145,6 +145,19 @@ impl View {
         .constrained_to(viewport)
     }
 
+    /// The same part of the photo on screen once the photo is shown `factor`
+    /// times as large in pixels: a picture replaced by a bigger one of the same photo.
+    pub fn for_photo_scaled_by(self, factor: f32) -> Self {
+        let zoom = match self.zoom {
+            Zoom::Fit => Zoom::Fit,
+            Zoom::Scale(scale) => Zoom::Scale(scale / factor),
+        };
+        Self {
+            zoom,
+            center: self.center.map(|position| position * factor),
+        }
+    }
+
     pub fn placement(&self, viewport: &Viewport) -> Placement {
         let view = self.constrained_to(viewport);
         let scale = view.scale(viewport);
@@ -208,6 +221,31 @@ mod tests {
             (actual[0] - expected[0]).abs() < 0.01 && (actual[1] - expected[1]).abs() < 0.01,
             "{actual:?} differs from {expected:?}"
         );
+    }
+
+    #[test]
+    fn a_bigger_picture_of_the_photo_keeps_the_same_part_on_screen() {
+        let small = Viewport {
+            photo: [1000, 500],
+            ..VIEWPORT
+        };
+        let zoomed = View::fit().zoomed_around(&small, [100.0, 100.0], 3.0);
+
+        let replaced = zoomed.for_photo_scaled_by(4.0);
+
+        let before = zoomed.placement(&small);
+        let after = replaced.placement(&VIEWPORT);
+        assert_close(
+            after.photo_min,
+            before.photo_min.map(|position| position * 4.0),
+        );
+        assert_close(after.screen_size, before.screen_size);
+        assert!((after.scale - before.scale / 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn fit_stays_fit_when_the_picture_is_replaced() {
+        assert!(View::fit().for_photo_scaled_by(4.0).is_fit());
     }
 
     #[test]

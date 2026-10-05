@@ -1,7 +1,12 @@
 pub mod catalog;
 pub mod catalog_document;
 pub mod catalog_storage;
+pub mod grid_step;
 pub mod import_day;
+pub mod mark;
 pub mod natural_order;
+pub mod photo_selection;
+pub mod photo_trash;
 pub mod series;
+pub mod series_filter;
 pub mod session;

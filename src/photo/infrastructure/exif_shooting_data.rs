@@ -4,6 +4,7 @@ use rawler::exif::Exif;
 use rawler::formats::tiff::reader::TiffReader;
 use rawler::formats::tiff::{GenericTiffReader, Rational};
 
+use crate::photo::domain::photo_details::ShotAt;
 use crate::photo::domain::shooting_data::ShootingData;
 
 /// Sensitivities too high for the 16-bit tag say so with this value there.
@@ -27,12 +28,13 @@ pub fn shooting_data_of(exif: &Exif) -> ShootingData {
     }
 }
 
-/// What a TIFF structure says: a TIFF file, or the EXIF block of another format.
-/// Nothing when it cannot be read.
-pub fn shooting_data_of_tiff(mut structure: impl Read + Seek) -> ShootingData {
-    GenericTiffReader::new(&mut structure, 0, 0, Some(1), &[])
-        .ok()
-        .and_then(|tiff| Exif::new(tiff.root_ifd()).ok())
-        .map(|exif| shooting_data_of(&exif))
-        .unwrap_or_default()
+pub fn shot_at_of(exif: &Exif) -> Option<ShotAt> {
+    ShotAt::from_exif(exif.date_time_original.as_deref()?)
+}
+
+/// The EXIF of a TIFF structure: a TIFF file, or the EXIF block of another
+/// format. `None` when it cannot be read.
+pub fn exif_of_tiff(mut structure: impl Read + Seek) -> Option<Exif> {
+    let tiff = GenericTiffReader::new(&mut structure, 0, 0, Some(1), &[]).ok()?;
+    Exif::new(tiff.root_ifd()).ok()
 }

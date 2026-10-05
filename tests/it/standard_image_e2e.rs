@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use ziv::color::domain::working_space::DisplayTransform;
 use ziv::photo::domain::working_image::WorkingImage;
+use ziv::photo::infrastructure::file_decoder::FileDecoder;
 use ziv::photo::infrastructure::standard_image_file::decode_standard_image_file;
 
 const BLOCK: u32 = 16;
@@ -97,4 +98,11 @@ fn a_file_that_is_not_an_image_reports_why() {
     let error = decode_standard_image_file(&not_an_image).unwrap_err();
 
     assert!(!error.to_string().is_empty());
+}
+
+#[test]
+fn a_standard_image_embeds_no_picture_to_stand_in_for_it() {
+    let photo = fixture("patches_rotated_90_cw.jpg");
+
+    assert_eq!(FileDecoder.decode_embedded_picture(&photo).unwrap(), None);
 }

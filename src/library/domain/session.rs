@@ -60,6 +60,13 @@ impl Session {
         found
     }
 
+    /// Takes `removed` out; the selected photo stays selected when it is not one of them.
+    pub fn remove(&mut self, removed: &[PathBuf]) {
+        let selected = self.selected_photo().map(Path::to_owned);
+        self.photos.retain(|photo| !removed.contains(photo));
+        self.selected = selected.and_then(|photo| self.index_of(&photo));
+    }
+
     pub fn is_selection_inside(&self) -> bool {
         self.selected.is_none_or(|index| index < self.photos.len())
     }
@@ -87,18 +94,9 @@ impl Session {
         }
     }
 
-    /// Stops at the first photo.
-    pub fn select_previous(&mut self) {
-        if let Some(index) = self.selected {
-            self.select(index.saturating_sub(1));
-        }
-    }
-
-    /// Stops at the last photo.
-    pub fn select_next(&mut self) {
-        if let Some(index) = self.selected {
-            self.select(index + 1);
-        }
+    /// Leaves no photo selected: none of them is shown.
+    pub fn select_none(&mut self) {
+        self.selected = None;
     }
 }
 
@@ -167,26 +165,16 @@ mod tests {
     }
 
     #[test]
-    fn next_and_previous_move_the_selection_by_one() {
+    fn removed_photos_leave_and_the_selected_photo_stays_selected() {
         let mut session = three_photos();
-
-        session.select_next();
-        assert_eq!(session.selected_index(), Some(1));
-
-        session.select_previous();
-        assert_eq!(session.selected_index(), Some(0));
-    }
-
-    #[test]
-    fn selection_stops_at_both_ends() {
-        let mut session = three_photos();
-
-        session.select_previous();
-        assert_eq!(session.selected_index(), Some(0));
-
         session.select(2);
-        session.select_next();
-        assert_eq!(session.selected_index(), Some(2));
+
+        session.remove(&paths(&["/p/1.jpg"]));
+        assert_eq!(session.photos(), paths(&["/p/2.jpg", "/p/3.jpg"]));
+        assert_eq!(session.selected_photo(), Some(Path::new("/p/3.jpg")));
+
+        session.remove(&paths(&["/p/3.jpg"]));
+        assert_eq!(session.selected_photo(), None);
     }
 
     #[test]

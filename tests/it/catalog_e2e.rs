@@ -10,7 +10,9 @@ use ziv::library::application::stored_catalog::StoredCatalog;
 use ziv::library::domain::catalog::Catalog;
 use ziv::library::domain::catalog_storage::CatalogStorage;
 use ziv::library::domain::import_day::ImportDay;
+use ziv::library::domain::mark::Rating;
 use ziv::library::domain::series::Series;
+use ziv::library::domain::series_filter::SeriesFilter;
 use ziv::library::infrastructure::catalog_file::CatalogFile;
 use ziv::library::infrastructure::photo_files::import_of;
 use ziv::photo::infrastructure::file_decoder::FileDecoder;
@@ -246,4 +248,65 @@ fn data_folder_that_cannot_be_written_reports_the_failure() {
     assert_eq!(stored.unusable_storage(), None);
     assert!(failure.is_some());
     assert_eq!(stored.current().series().len(), 1);
+}
+
+#[test]
+fn marks_are_found_again_after_a_relaunch_and_make_no_photo_an_edited_one() {
+    let disk = tempfile::tempdir().unwrap();
+    let folder = shoot_folder(disk.path(), "Lofoten", &["a.jpg", "b.jpg"]);
+    let data = disk.path().join("data");
+    let mut catalog = StoredCatalog::read_from(CatalogFile::in_folder(data.clone()));
+    let series = series_imported_from(std::slice::from_ref(&folder));
+    catalog.change(|catalog| catalog.import(series));
+
+    catalog.change(|catalog| catalog.rate(&[0, 1], Rating::of(4)));
+    catalog.change(|catalog| catalog.toggle_rejected(&[1]));
+
+    let relaunched = StoredCatalog::read_from(CatalogFile::in_folder(data));
+    let marks = ["a.jpg", "b.jpg"].map(|name| relaunched.current().mark_of(&folder.join(name)));
+    assert_eq!(marks.map(|mark| mark.rating.stars()), [4, 4]);
+    assert_eq!(marks.map(|mark| mark.is_rejected), [false, true]);
+    assert_eq!(
+        relaunched.current().series()[0].edited_count(has_sidecar),
+        0
+    );
+}
+
+#[test]
+fn the_filter_of_each_series_is_found_again_after_a_relaunch() {
+    let disk = tempfile::tempdir().unwrap();
+    let kept = shoot_folder(disk.path(), "Kept", &["a.jpg"]);
+    let new = shoot_folder(disk.path(), "New", &["b.jpg"]);
+    let data = disk.path().join("data");
+    let mut catalog = StoredCatalog::read_from(CatalogFile::in_folder(data.clone()));
+    catalog.change(|catalog| catalog.import(series_imported_from(std::slice::from_ref(&kept))));
+    catalog.change(|catalog| catalog.set_filter(SeriesFilter::at_least(2)));
+    catalog.change(|catalog| catalog.import(series_imported_from(std::slice::from_ref(&new))));
+
+    let relaunched = StoredCatalog::read_from(CatalogFile::in_folder(data));
+
+    let filters: Vec<SeriesFilter> = relaunched
+        .current()
+        .series()
+        .iter()
+        .map(|series| series.filter)
+        .collect();
+    assert_eq!(filters, [SeriesFilter::All, SeriesFilter::at_least(2)]);
+}
+
+#[test]
+fn photo_removed_from_its_series_stays_on_disk_and_out_of_a_new_import_of_the_folder() {
+    let disk = tempfile::tempdir().unwrap();
+    let folder = shoot_folder(disk.path(), "Lofoten", &["a.jpg", "b.jpg"]);
+    let data = disk.path().join("data");
+    let mut catalog = StoredCatalog::read_from(CatalogFile::in_folder(data.clone()));
+    catalog.change(|catalog| catalog.import(series_imported_from(std::slice::from_ref(&folder))));
+
+    catalog.change(|catalog| catalog.remove_photos(&[0]));
+
+    assert!(folder.join("a.jpg").exists());
+    let mut relaunched = StoredCatalog::read_from(CatalogFile::in_folder(data));
+    fs::write(folder.join("c.jpg"), b"").unwrap();
+    relaunched.change(|catalog| catalog.import(series_imported_from(&[folder])));
+    assert_eq!(names(relaunched.current().photos()), ["b.jpg", "c.jpg"]);
 }

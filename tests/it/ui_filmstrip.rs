@@ -4,9 +4,9 @@ use crate::themed::is_themed;
 use egui::{Key, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use ziv::library::ui::filmstrip::{
-    FILMSTRIP_HEIGHT, FilmstripIntent, FilmstripPhoto, ThumbnailState, filmstrip,
-};
+use ziv::library::domain::mark::{Mark, Rating};
+use ziv::library::ui::filmstrip::{FILMSTRIP_HEIGHT, FilmstripIntent, filmstrip};
+use ziv::library::ui::photo_thumbnail::{PhotoThumbnail, ThumbnailState};
 
 const OTHER_CONTROL: &str = "Another control";
 const EDITED: &str = "DSC1.ARW";
@@ -15,6 +15,7 @@ const NAMES: [&str; 3] = [EDITED, "DSC2.ARW", "DSC10.ARW"];
 struct Strip {
     thumbnails: [ThumbnailState; 3],
     selected: Option<usize>,
+    mark_of_all: Mark,
     intent: Option<FilmstripIntent>,
     other_control: f32,
 }
@@ -23,6 +24,7 @@ fn strip_harness(thumbnails: [ThumbnailState; 3]) -> Harness<'static, Strip> {
     let strip = Strip {
         thumbnails,
         selected: Some(0),
+        mark_of_all: Mark::default(),
         intent: None,
         other_control: 0.0,
     };
@@ -33,13 +35,14 @@ fn strip_harness(thumbnails: [ThumbnailState; 3]) -> Harness<'static, Strip> {
                 if !is_themed(ui) {
                     return;
                 }
-                let photos: Vec<FilmstripPhoto<'_>> = NAMES
+                let photos: Vec<PhotoThumbnail<'_>> = NAMES
                     .iter()
                     .zip(&strip.thumbnails)
-                    .map(|(name, thumbnail)| FilmstripPhoto {
+                    .map(|(name, thumbnail)| PhotoThumbnail {
                         path: Path::new(name),
                         thumbnail,
                         is_edited: *name == EDITED,
+                        mark: strip.mark_of_all,
                     })
                     .collect();
                 ui.add(egui::Slider::new(&mut strip.other_control, 0.0..=1.0).text(OTHER_CONTROL));
@@ -169,4 +172,21 @@ fn arrow_keys_are_left_to_a_focused_control() {
 
     assert_eq!(harness.state().intent, None);
     assert!(harness.state().other_control > 0.0);
+}
+
+#[test]
+fn a_thumbnail_tells_the_marks_of_its_photo() {
+    let mut harness = strip_harness(all_loading());
+
+    harness.state_mut().mark_of_all = Mark {
+        rating: Rating::of(1),
+        is_rejected: false,
+    };
+    harness.run();
+
+    assert!(
+        harness
+            .query_by_label("DSC2.ARW, loading, 1 star")
+            .is_some()
+    );
 }

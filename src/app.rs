@@ -12,7 +12,7 @@ use crate::develop::domain::development::Development;
 use crate::develop::domain::edit::{Edit, FULL_INTENSITY};
 use crate::develop::domain::mask::{Mask, MaskShape};
 use crate::develop::domain::zone::ZoneMask;
-use crate::develop::infrastructure::sidecar_files::{SidecarFiles, has_sidecar};
+use crate::develop::infrastructure::sidecar_files::{SidecarFiles, has_sidecar, sidecar_path};
 use crate::develop::ui::before_badge::before_badge;
 use crate::develop::ui::develop_panel::{
     DevelopPanelState, develop_panel, edits_left_alone_warning,
@@ -25,6 +25,7 @@ use crate::enhance::application::enhancement_run::EnhancementRun;
 use crate::enhance::application::enhancer::{EnhancementError, Enhancer};
 use crate::enhance::domain::enhancement_model::TILE_SHAPE;
 use crate::enhance::infrastructure::enhanced_upload::upload_with_enhancement;
+use crate::enhance::infrastructure::enhancement_files::enhancement_path;
 use crate::enhance::infrastructure::photo_enhancement::enhance_photo;
 use crate::enhance::ui::enhancement_progress::{enhancement_label, enhancement_progress};
 use crate::export::application::export_run::ExportRun;
@@ -35,38 +36,55 @@ use crate::export::ui::export_dialog::{ExportDialogIntent, export_dialog};
 use crate::export::ui::export_progress::{export_progress, export_summary};
 use crate::histogram::infrastructure::developed_histogram::DevelopedHistogram;
 use crate::histogram::ui::histogram_plot::histogram_plot;
+use crate::library::application::photo_trashing::trash_photos;
 use crate::library::application::stored_catalog::StoredCatalog;
 use crate::library::domain::catalog::Catalog;
+use crate::library::domain::mark::{MOST_STARS, Rating};
+use crate::library::domain::photo_selection::PhotoSelection;
+use crate::library::domain::photo_trash::PhotoTrash;
 use crate::library::domain::series::Series;
+use crate::library::domain::series_filter::SeriesFilter;
 use crate::library::infrastructure::catalog_file::CatalogFile;
 use crate::library::infrastructure::photo_files::import_of;
 use crate::library::infrastructure::photo_picker::{
     pick_photos_or_folder, pick_series_folder, show_in_finder,
 };
 use crate::library::infrastructure::series_covers::SeriesCovers;
+use crate::library::infrastructure::system_trash::SystemTrash;
 use crate::library::infrastructure::thumbnail_texture::thumbnail_texture;
 use crate::library::infrastructure::today::today;
 use crate::library::ui::empty_state::empty_state;
-use crate::library::ui::filmstrip::{
-    FILMSTRIP_HEIGHT, FilmstripIntent, FilmstripPhoto, ThumbnailState, filmstrip,
+use crate::library::ui::filmstrip::{FILMSTRIP_HEIGHT, FilmstripIntent, filmstrip};
+use crate::library::ui::mark_line::{MARK_LINE_HEIGHT, mark_line};
+use crate::library::ui::no_photo_shown::no_photo_shown;
+use crate::library::ui::photo_grid::{
+    GridIntent, GridShown, NARROWEST_PHOTO_GRID, PHOTO_GRID_WIDTH, grid_header, photo_grid,
 };
+use crate::library::ui::photo_thumbnail::{PhotoThumbnail, ThumbnailState};
 use crate::library::ui::series_sidebar::{
     SERIES_SIDEBAR_WIDTH, SeriesRow, SeriesShown, SidebarIntent, series_sidebar,
     unusable_catalog_warning,
 };
+use crate::library::ui::trash_confirmation::{TrashConfirmationIntent, trash_confirmation};
 use crate::models::application::model_store::ModelStore;
 use crate::models::infrastructure::model_downloads::ModelDownloads;
 use crate::models::infrastructure::models_folder::models_folder;
 use crate::models::infrastructure::onnx_runner::OnnxRunner;
 use crate::photo::application::photo_loader::{Backlog, LoadedPhoto, PhotoLoader};
+use crate::photo::application::photos_ahead::PhotosAhead;
 use crate::photo::domain::decode_error::DecodeError;
+use crate::photo::domain::photo_details::PhotoDetails;
 use crate::photo::domain::photo_kind::PhotoKind;
 use crate::photo::domain::photo_name::photo_name;
 use crate::photo::domain::shooting_data::ShootingData;
 use crate::photo::domain::thumbnail::Thumbnail;
 use crate::photo::infrastructure::file_decoder::FileDecoder;
 use crate::photo::infrastructure::thumbnail_cache::ThumbnailCache;
+use crate::photo::ui::photo_details_lines::{
+    PHOTO_DETAILS_HEIGHT, PhotoDetailsShown, photo_details_lines,
+};
 use crate::photo::ui::shooting_data_line::shooting_data_line;
+use crate::shell::domain::window_mode::WindowMode;
 use crate::shell::ui::top_bar::{TOP_BAR_HEIGHT, TopBarIntent, TopBarShown, top_bar};
 use crate::viewport::domain::view::View;
 use crate::viewport::domain::zoom_readout::zoom_readout;
@@ -91,9 +109,23 @@ const NOTHING_LOCATED_NOTICE: &str = "None of the photos of this series is in th
 const PHOTO_NOT_FOUND_REASON: &str = "not found";
 const NO_MODELS_FOLDER_NOTICE: &str = "Models cannot be kept on this Mac: no data folder";
 const DEVELOP_PANEL_WIDTH: f32 = 300.0;
+const NARROWEST_PREVIEW: f32 = 320.0;
 const OPEN_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 const EXPORT_SETTINGS_KEY: &str = "export settings";
 const SIDEBAR_SHOWN_KEY: &str = "series sidebar shown";
+const WINDOW_MODE_KEY: &str = "window mode";
+const CULL_KEY: Key = Key::G;
+const DEVELOP_KEY: Key = Key::D;
+const REJECT_KEY: Key = Key::X;
+/// The key that gives each rating, from no star to five.
+const RATING_KEYS: [Key; MOST_STARS as usize + 1] = [
+    Key::Num0,
+    Key::Num1,
+    Key::Num2,
+    Key::Num3,
+    Key::Num4,
+    Key::Num5,
+];
 const SIDEBAR_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::L);
 const EXPORT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
 const EXPORT_SESSION_SHORTCUT: KeyboardShortcut =
@@ -111,6 +143,7 @@ enum ViewedPhoto {
     None,
     Loading(PathBuf),
     Ready {
+        path: PathBuf,
         photo: Box<PresentedPhoto>,
         kind: PhotoKind,
         shooting_data: ShootingData,
@@ -136,7 +169,7 @@ struct PhotoEnhancement {
 }
 
 struct UploadedPhoto {
-    source: SourceTexture,
+    source: Arc<SourceTexture>,
     kind: PhotoKind,
     shooting_data: ShootingData,
 }
@@ -144,9 +177,45 @@ struct UploadedPhoto {
 fn upload_decoded(engine: &Engine, path: &Path) -> Result<UploadedPhoto, DecodeError> {
     let decoded = FileDecoder.decode(path)?;
     Ok(UploadedPhoto {
-        source: upload_with_enhancement(engine, path, &decoded.image),
+        source: Arc::new(upload_with_enhancement(engine, path, &decoded.image)),
         kind: decoded.kind,
         shooting_data: decoded.shooting_data,
+    })
+}
+
+struct PreviewedPhoto {
+    photo: UploadedPhoto,
+    details: PhotoDetails,
+    /// The picture its RAW embeds, shown until the RAW is developed.
+    is_stand_in: bool,
+}
+
+/// The photo as shot on the GPU, without waiting for a RAW to be developed
+/// when the RAW embeds a picture.
+fn upload_preview(engine: &Engine, path: &Path) -> Result<PreviewedPhoto, DecodeError> {
+    let (photo, is_stand_in) = match FileDecoder.decode_embedded_picture(path)? {
+        Some(picture) => {
+            let photo = UploadedPhoto {
+                source: Arc::new(engine.upload(&picture.image)),
+                kind: picture.kind,
+                shooting_data: picture.shooting_data,
+            };
+            (photo, true)
+        }
+        None => (upload_decoded(engine, path)?, false),
+    };
+    Ok(PreviewedPhoto {
+        photo,
+        details: FileDecoder.read_details(path),
+        is_stand_in,
+    })
+}
+
+fn develop_ahead(engine: &Engine, path: &Path) -> Result<PreviewedPhoto, DecodeError> {
+    Ok(PreviewedPhoto {
+        photo: upload_decoded(engine, path)?,
+        details: FileDecoder.read_details(path),
+        is_stand_in: false,
     })
 }
 
@@ -154,6 +223,13 @@ pub struct ZivApp {
     egui_context: egui::Context,
     presenter: PhotoPresenter,
     viewed_loader: PhotoLoader<UploadedPhoto>,
+    preview_loader: PhotoLoader<PreviewedPhoto>,
+    /// What the file of the previewed photo says about it.
+    photo_details: PhotoDetails,
+    /// In Cull mode, the RAW being developed to replace the picture it embeds.
+    awaited_development: Option<PathBuf>,
+    /// In Cull mode, the photos next to the previewed one.
+    ahead: PhotosAhead<PreviewedPhoto>,
     thumbnail_loader: PhotoLoader<Thumbnail>,
     thumbnail_cache: ThumbnailCache,
     covers: SeriesCovers,
@@ -163,6 +239,12 @@ pub struct ZivApp {
     /// One per photo of the open series, in the same order.
     thumbnails: Vec<ThumbnailState>,
     is_sidebar_shown: bool,
+    mode: WindowMode,
+    /// What a mark or a removal acts on in the open series.
+    selection: PhotoSelection,
+    trash: Box<dyn PhotoTrash>,
+    /// The photos the open confirmation is about to move to the Trash.
+    photos_to_trash: Option<Vec<PathBuf>>,
     /// One per series of the catalog, in the same order.
     series_on_disk: Vec<SeriesOnDisk>,
     /// Whether each photo of the open series is edited, in the same order.
@@ -258,6 +340,24 @@ impl ZivApp {
         apply_theme(&egui_context);
         let repainting_context = egui_context.clone();
         let uploading_engine = engine.clone();
+        let preview_loader = PhotoLoader::spawn(
+            Backlog::LoadNewestOnly,
+            {
+                let engine = engine.clone();
+                move |path| upload_preview(&engine, path)
+            },
+            {
+                let egui_context = egui_context.clone();
+                move || egui_context.request_repaint()
+            },
+        );
+        let ahead = PhotosAhead::spawn(
+            {
+                let engine = engine.clone();
+                move |path| develop_ahead(&engine, path)
+            },
+            || {},
+        );
         let export_settings = creation
             .storage
             .and_then(|storage| eframe::get_value(storage, EXPORT_SETTINGS_KEY))
@@ -266,10 +366,18 @@ impl ZivApp {
             .storage
             .and_then(|storage| eframe::get_value(storage, SIDEBAR_SHOWN_KEY))
             .unwrap_or(true);
+        let mode = creation
+            .storage
+            .and_then(|storage| eframe::get_value(storage, WINDOW_MODE_KEY))
+            .unwrap_or_default();
         let catalog_path = catalog_file.path();
         let catalog = StoredCatalog::read_from(catalog_file);
         let mut app = Self {
             is_sidebar_shown,
+            mode,
+            selection: PhotoSelection::default(),
+            trash: Box::new(SystemTrash),
+            photos_to_trash: None,
             presenter: PhotoPresenter::new(render_state, engine.clone()),
             engine,
             export_settings,
@@ -283,6 +391,10 @@ impl ZivApp {
                 move |path| upload_decoded(&uploading_engine, path),
                 move || repainting_context.request_repaint(),
             ),
+            preview_loader,
+            photo_details: PhotoDetails::default(),
+            awaited_development: None,
+            ahead,
             thumbnail_loader: spawn_thumbnail_loader(&egui_context, &thumbnail_cache),
             covers: SeriesCovers::spawn(&egui_context, {
                 let cache = thumbnail_cache.clone();
@@ -322,14 +434,83 @@ impl ZivApp {
         self
     }
 
+    /// The app moving trashed files to `trash` instead of this Mac's Trash.
+    pub fn trashing_with(mut self, trash: impl PhotoTrash + 'static) -> Self {
+        self.trash = Box::new(trash);
+        self
+    }
+
     fn open(&mut self, paths: &[PathBuf]) {
         let import = import_of(paths, |path| FileDecoder.supports(path));
         let Some(series) = Series::imported(import, today()) else {
             return self.show_notice(NO_PHOTO_FOUND_NOTICE);
         };
         self.notice = None;
+        let known_series = self.catalog.current().series().len();
         self.change_catalog(|catalog| catalog.import(series));
+        if self.catalog.current().series().len() > known_series {
+            self.mode = WindowMode::Cull;
+        }
         self.show_open_series();
+    }
+
+    /// Each mode looks at its own picture of the selected photo.
+    fn switch_to(&mut self, mode: WindowMode) {
+        if self.mode == mode {
+            return;
+        }
+        self.mode = mode;
+        self.selection = PhotoSelection::default();
+        self.view_selected_photo();
+    }
+
+    /// Rates or rejects the selection on the keys of the marks.
+    fn mark_on_its_keys(&mut self, ui: &egui::Ui) {
+        if ui.ctx().text_edit_focused() {
+            return;
+        }
+        let is_pressed = |key| ui.input_mut(|input| input.consume_key(Modifiers::NONE, key));
+        let rating = (0..=MOST_STARS).find(|stars| is_pressed(RATING_KEYS[usize::from(*stars)]));
+        if let Some(stars) = rating {
+            self.rate_selection(Rating::of(stars));
+        }
+        if is_pressed(REJECT_KEY) {
+            let photos = self.selected_photos();
+            self.change_shown_photos(|catalog| catalog.toggle_rejected(&photos));
+        }
+    }
+
+    fn rate_selection(&mut self, rating: Rating) {
+        let photos = self.selected_photos();
+        self.change_shown_photos(|catalog| catalog.rate(&photos, rating));
+    }
+
+    fn filter_series(&mut self, filter: SeriesFilter) {
+        self.change_shown_photos(|catalog| catalog.set_filter(filter));
+    }
+
+    /// A change of marks or of filter: the photos shown may not be the same after it.
+    fn change_shown_photos(&mut self, change: impl FnOnce(&mut Catalog)) {
+        let shown_before = self.catalog.current().shown_photos();
+        self.view_photo_selected_by(change);
+        if self.catalog.current().shown_photos() != shown_before {
+            self.selection = PhotoSelection::default();
+        }
+    }
+
+    fn switch_mode_on_its_key(&mut self, ui: &egui::Ui) {
+        if ui.ctx().text_edit_focused() {
+            return;
+        }
+        let modes = [
+            (CULL_KEY, WindowMode::Cull),
+            (DEVELOP_KEY, WindowMode::Develop),
+        ];
+        for (key, mode) in modes {
+            if ui.input_mut(|input| input.consume_key(Modifiers::NONE, key)) {
+                self.switch_to(mode);
+            }
+        }
     }
 
     fn change_catalog(&mut self, change: impl FnOnce(&mut Catalog)) {
@@ -339,6 +520,7 @@ impl ZivApp {
     }
 
     fn show_open_series(&mut self) {
+        self.selection = PhotoSelection::default();
         let failure = self.edits.close_session();
         self.report(failure);
         self.look_at_series_on_disk();
@@ -369,11 +551,15 @@ impl ZivApp {
     }
 
     fn view_selected_photo(&mut self) {
+        self.keep_viewed_photo_ahead();
         let Some(path) = self.catalog.current().selected_photo() else {
+            self.ahead.want(Vec::new());
             self.viewed = ViewedPhoto::None;
             return;
         };
         self.is_before_shown = false;
+        self.photo_details = PhotoDetails::default();
+        self.awaited_development = None;
         self.mask_selection = self.mask_selection.selecting(None);
         self.zone_detection = None;
         self.people_pick = None;
@@ -385,35 +571,159 @@ impl ZivApp {
             };
             return;
         }
-        self.viewed_loader.request(path.to_owned());
-        self.viewed = ViewedPhoto::Loading(path.to_owned());
+        let path = path.to_owned();
+        let developed_ahead = self.take_developed_ahead(&path);
+        self.viewed = match (self.mode, developed_ahead) {
+            (WindowMode::Cull, Some(developed)) => {
+                self.photo_details = developed.details;
+                self.ready_at_fit(path, developed.photo)
+            }
+            (WindowMode::Cull, None) => {
+                self.preview_loader.request(path.clone());
+                ViewedPhoto::Loading(path)
+            }
+            (WindowMode::Develop, _) => {
+                self.viewed_loader.request(path.clone());
+                ViewedPhoto::Loading(path)
+            }
+        };
+    }
+
+    /// The developed photo that stops being previewed is kept in case it is next to the one that follows.
+    fn keep_viewed_photo_ahead(&mut self) {
+        let ViewedPhoto::Ready {
+            path,
+            photo,
+            kind,
+            shooting_data,
+            ..
+        } = &self.viewed
+        else {
+            return;
+        };
+        let is_still_selected = self.catalog.current().selected_photo() == Some(path);
+        if is_still_selected || self.awaited_development.is_some() {
+            return;
+        }
+        let developed = PreviewedPhoto {
+            photo: UploadedPhoto {
+                source: photo.source().clone(),
+                kind: *kind,
+                shooting_data: *shooting_data,
+            },
+            details: self.photo_details,
+            is_stand_in: false,
+        };
+        self.ahead.keep(path.clone(), developed);
+    }
+
+    /// In Cull mode the photos next to `selected` are developed ahead; in Develop mode none is.
+    fn take_developed_ahead(&mut self, selected: &Path) -> Option<PreviewedPhoto> {
+        let developed = self.ahead.take(selected);
+        let beside = match self.mode {
+            WindowMode::Cull => self.catalog.current().photos_beside_selected(),
+            WindowMode::Develop => Vec::new(),
+        };
+        self.ahead
+            .want(beside.into_iter().map(Path::to_owned).collect());
+        developed
+    }
+
+    fn ready_at_fit(&self, path: PathBuf, uploaded: UploadedPhoto) -> ViewedPhoto {
+        ViewedPhoto::Ready {
+            path,
+            photo: Box::new(self.presenter.present(uploaded.source)),
+            kind: uploaded.kind,
+            shooting_data: uploaded.shooting_data,
+            histogram: DevelopedHistogram::default(),
+            view: View::fit(),
+        }
     }
 
     fn receive_viewed_photo(&mut self) {
-        for loaded in self.viewed_loader.take_loaded() {
-            let ViewedPhoto::Loading(awaited) = &self.viewed else {
-                continue;
-            };
-            if *awaited != loaded.path {
-                continue;
+        let (developed, previewed) = (
+            self.viewed_loader.take_loaded(),
+            self.preview_loader.take_loaded(),
+        );
+        match self.mode {
+            WindowMode::Develop => developed
+                .into_iter()
+                .for_each(|loaded| self.show_loaded(loaded)),
+            WindowMode::Cull => {
+                previewed
+                    .into_iter()
+                    .for_each(|loaded| self.show_previewed(loaded));
+                developed
+                    .into_iter()
+                    .for_each(|loaded| self.replace_stand_in(loaded));
             }
-            self.viewed = match loaded.result {
-                Ok(uploaded) => ViewedPhoto::Ready {
-                    photo: Box::new(self.presenter.present(uploaded.source)),
-                    kind: uploaded.kind,
-                    shooting_data: uploaded.shooting_data,
-                    histogram: DevelopedHistogram::default(),
-                    view: View::fit(),
-                },
-                Err(error) => {
-                    self.mark_thumbnail_failed(&loaded.path);
-                    ViewedPhoto::Failed {
-                        path: loaded.path,
-                        error,
-                    }
-                }
-            };
         }
+    }
+
+    /// The developed RAW takes the place of the picture it embeds, the same
+    /// part of the photo staying on screen. A RAW that fails to develop keeps
+    /// its picture.
+    fn replace_stand_in(&mut self, LoadedPhoto { path, result }: LoadedPhoto<UploadedPhoto>) {
+        if self.awaited_development.as_ref() != Some(&path) {
+            return;
+        }
+        self.awaited_development = None;
+        let (
+            Ok(developed),
+            ViewedPhoto::Ready {
+                photo,
+                kind,
+                shooting_data,
+                view,
+                ..
+            },
+        ) = (result, &mut self.viewed)
+        else {
+            return;
+        };
+        let presented = self.presenter.present(developed.source);
+        let enlargement = presented.size()[0] as f32 / photo.size()[0] as f32;
+        *view = view.for_photo_scaled_by(enlargement);
+        **photo = presented;
+        *kind = developed.kind;
+        *shooting_data = developed.shooting_data;
+    }
+
+    fn is_awaited(&self, path: &Path) -> bool {
+        matches!(&self.viewed, ViewedPhoto::Loading(awaited) if awaited == path)
+    }
+
+    fn show_previewed(&mut self, LoadedPhoto { path, result }: LoadedPhoto<PreviewedPhoto>) {
+        if !self.is_awaited(&path) {
+            return;
+        }
+        let mut is_stand_in = false;
+        let result = result.map(|previewed| {
+            self.photo_details = previewed.details;
+            is_stand_in = previewed.is_stand_in;
+            previewed.photo
+        });
+        if is_stand_in {
+            self.viewed_loader.request(path.clone());
+            self.awaited_development = Some(path.clone());
+        }
+        self.show_loaded(LoadedPhoto { path, result });
+    }
+
+    fn show_loaded(&mut self, loaded: LoadedPhoto<UploadedPhoto>) {
+        if !self.is_awaited(&loaded.path) {
+            return;
+        }
+        self.viewed = match loaded.result {
+            Ok(uploaded) => self.ready_at_fit(loaded.path, uploaded),
+            Err(error) => {
+                self.mark_thumbnail_failed(&loaded.path);
+                ViewedPhoto::Failed {
+                    path: loaded.path,
+                    error,
+                }
+            }
+        };
     }
 
     fn mark_thumbnail_failed(&mut self, path: &Path) {
@@ -494,12 +804,140 @@ impl ZivApp {
     }
 
     fn apply(&mut self, intent: FilmstripIntent) {
-        let previously_selected = self.catalog.current().selected_index();
         match intent {
-            FilmstripIntent::Select(index) => self.change_catalog(|catalog| catalog.select(index)),
-            FilmstripIntent::SelectPrevious => self.change_catalog(Catalog::select_previous),
-            FilmstripIntent::SelectNext => self.change_catalog(Catalog::select_next),
+            FilmstripIntent::Select(position) => self.select_shown_photo(position),
+            FilmstripIntent::SelectPrevious => self.select_photo(Catalog::select_previous),
+            FilmstripIntent::SelectNext => self.select_photo(Catalog::select_next),
         }
+    }
+
+    /// Selects alone the photo at `position` among the shown ones.
+    fn select_shown_photo(&mut self, position: usize) {
+        if let Some(photo) = self.catalog.current().shown_photos().get(position).copied() {
+            self.select_photo(|catalog| catalog.select(photo));
+        }
+    }
+
+    /// The grid speaks of photos by their place among the shown ones.
+    fn apply_to_grid(&mut self, intent: GridIntent) {
+        let catalog = self.catalog.current();
+        let shown = catalog.shown_photos();
+        let selected = catalog.selected_index();
+        match intent {
+            GridIntent::Select(position) => self.select_shown_photo(position),
+            GridIntent::Toggle(position) => {
+                let (Some(photo), Some(selected)) = (shown.get(position), selected) else {
+                    return;
+                };
+                let to_select = self.selection.toggle(*photo, selected);
+                self.view_photo_selected_by(|catalog| catalog.select(to_select));
+            }
+            GridIntent::ExtendTo(position) => {
+                let from =
+                    selected.and_then(|selected| shown.iter().position(|photo| *photo == selected));
+                let (Some(from), Some(photo)) = (from, shown.get(position).copied()) else {
+                    return;
+                };
+                let between = &shown[from.min(position)..=from.max(position)];
+                self.selection = PhotoSelection::of(between.iter().copied());
+                self.view_photo_selected_by(|catalog| catalog.select(photo));
+            }
+            GridIntent::SelectAll => self.selection = PhotoSelection::of(shown),
+            GridIntent::Open(position) => {
+                self.select_shown_photo(position);
+                self.switch_to(WindowMode::Develop);
+            }
+            GridIntent::RemoveSelection => self.remove_from_series(self.selected_photos()),
+            GridIntent::RemoveFromSeries(position) => {
+                if let Some(photo) = shown.get(position) {
+                    self.remove_from_series(self.selection_or(*photo));
+                }
+            }
+            GridIntent::TrashSelection => self.ask_to_trash(self.selected_photos()),
+            GridIntent::TrashRejected => self.ask_to_trash(catalog.rejected_photos()),
+            GridIntent::MoveToTrash(position) => {
+                if let Some(photo) = shown.get(position) {
+                    self.ask_to_trash(self.selection_or(*photo));
+                }
+            }
+        }
+    }
+
+    fn ask_to_trash(&mut self, photos: Vec<usize>) {
+        let of_series = self.catalog.current().photos();
+        let files: Vec<PathBuf> = photos
+            .into_iter()
+            .filter_map(|photo| of_series.get(photo).cloned())
+            .collect();
+        if !files.is_empty() {
+            self.photos_to_trash = Some(files);
+        }
+    }
+
+    fn trash_confirmation_window(&mut self, ui: &egui::Ui) {
+        let Some(photos) = &self.photos_to_trash else {
+            return;
+        };
+        let modal = egui::Modal::new(egui::Id::new("trash confirmation"))
+            .frame(egui::Frame::window(ui.style()).inner_margin(space::L))
+            .show(ui.ctx(), |ui| trash_confirmation(ui, photos.len()));
+        match modal.inner {
+            Some(TrashConfirmationIntent::Confirm) => self.trash_asked_photos(),
+            Some(TrashConfirmationIntent::Cancel) => self.photos_to_trash = None,
+            None if modal.should_close() => self.photos_to_trash = None,
+            None => {}
+        }
+    }
+
+    /// Moves the photos of the confirmation to the Trash, each with its
+    /// sidecar and its enhancement file, and takes them out of the series.
+    fn trash_asked_photos(&mut self) {
+        let Some(photos) = self.photos_to_trash.take() else {
+            return;
+        };
+        let failure = self.edits.save_now();
+        self.report(failure);
+        let outcome = trash_photos(self.trash.as_ref(), &photos, |photo| {
+            let beside = [sidecar_path(photo), enhancement_path(photo)];
+            beside.into_iter().filter(|file| file.exists()).collect()
+        });
+        let catalog = self.catalog.current();
+        let trashed = outcome.trashed.iter();
+        let left: Vec<usize> = trashed
+            .filter_map(|photo| catalog.index_of(photo))
+            .collect();
+        self.change_catalog(|catalog| catalog.drop_trashed_photos(&left));
+        self.show_open_series();
+        match outcome.failed_count {
+            0 => {}
+            1 => self.show_notice("1 photo could not be moved to the Trash"),
+            count => self.show_notice(format!("{count} photos could not be moved to the Trash")),
+        }
+    }
+
+    /// The selection when `photo` is in it, else `photo` alone: what a menu of that photo acts on.
+    fn selection_or(&self, photo: usize) -> Vec<usize> {
+        let selection = self.selected_photos();
+        match selection.contains(&photo) {
+            true => selection,
+            false => vec![photo],
+        }
+    }
+
+    fn remove_from_series(&mut self, photos: Vec<usize>) {
+        self.change_catalog(|catalog| catalog.remove_photos(&photos));
+        self.show_open_series();
+    }
+
+    /// Selects one photo alone.
+    fn select_photo(&mut self, select: impl FnOnce(&mut Catalog)) {
+        self.selection = PhotoSelection::default();
+        self.view_photo_selected_by(select);
+    }
+
+    fn view_photo_selected_by(&mut self, select: impl FnOnce(&mut Catalog)) {
+        let previously_selected = self.catalog.current().selected_index();
+        self.change_catalog(select);
         if self.catalog.current().selected_index() != previously_selected {
             self.view_selected_photo();
         }
@@ -508,6 +946,8 @@ impl ZivApp {
     fn apply_to_window(&mut self, intent: TopBarIntent) {
         match intent {
             TopBarIntent::ToggleSidebar => self.is_sidebar_shown = !self.is_sidebar_shown,
+            TopBarIntent::SwitchTo(mode) => self.switch_to(mode),
+            TopBarIntent::Filter(filter) => self.filter_series(filter),
             TopBarIntent::ToggleBefore => self.is_before_shown = !self.is_before_shown,
             TopBarIntent::Export => self.ask_to_export_selected_photo(),
         }
@@ -608,6 +1048,9 @@ impl ZivApp {
 
     fn toggle_before_on_its_key(&mut self, ui: &egui::Ui) {
         let is_typing = ui.ctx().text_edit_focused();
+        if self.mode != WindowMode::Develop {
+            return;
+        }
         if !is_typing && ui.input_mut(|input| input.consume_key(Modifiers::NONE, BEFORE_KEY)) {
             self.is_before_shown = !self.is_before_shown;
         }
@@ -652,7 +1095,9 @@ impl ZivApp {
 
     fn ask_to_export_on_shortcut(&mut self, ui: &egui::Ui) {
         if ui.input_mut(|input| input.consume_shortcut(&EXPORT_SESSION_SHORTCUT)) {
-            self.ask_to_export(self.catalog.current().photos().to_vec());
+            let catalog = self.catalog.current();
+            let shown = catalog.shown_photos().into_iter();
+            self.ask_to_export(shown.map(|photo| catalog.photos()[photo].clone()).collect());
         }
         if ui.input_mut(|input| input.consume_shortcut(&EXPORT_SHORTCUT)) {
             self.ask_to_export_selected_photo();
@@ -719,7 +1164,8 @@ impl ZivApp {
     }
 
     fn can_masks_be_drawn(&self) -> bool {
-        !self.is_before_shown
+        self.mode == WindowMode::Develop
+            && !self.is_before_shown
             && self.people_pick.is_none()
             && self.photos_to_export.is_none()
             && self.edits_left_alone_reason().is_none()
@@ -1021,6 +1467,20 @@ impl ZivApp {
         }
     }
 
+    /// The viewed photo without its edit, as Cull mode shows it.
+    fn photo_as_shot(&self) -> ShownPhoto {
+        let ViewedPhoto::Ready { kind, .. } = &self.viewed else {
+            return ShownPhoto::default();
+        };
+        ShownPhoto {
+            development: Development {
+                kind: *kind,
+                edit: Edit::default(),
+            },
+            overlaid_mask: None,
+        }
+    }
+
     /// Counts the histogram of the photo as it is shown; the panel draws it at the next frame.
     fn follow_histogram(&mut self, shown: &ShownPhoto) {
         let ViewedPhoto::Ready {
@@ -1070,9 +1530,12 @@ impl ZivApp {
             is_sidebar_shown: self.is_sidebar_shown,
             series_name: catalog.open_series().map(|series| series.name.as_str()),
             photo_name: photo_name.as_deref(),
+            mode: self.mode,
+            filter: catalog.open_series().map(|series| series.filter),
             zoom_readout: self.zoom_readout.as_deref(),
             is_before_shown: self.is_before_shown,
-            can_before_be_shown: matches!(self.viewed, ViewedPhoto::Ready { .. }),
+            can_before_be_shown: self.mode == WindowMode::Develop
+                && matches!(self.viewed, ViewedPhoto::Ready { .. }),
             can_export: catalog.selected_photo().is_some(),
         };
         egui::Panel::top("top bar")
@@ -1082,26 +1545,106 @@ impl ZivApp {
             .inner
     }
 
-    fn filmstrip_panel(&self, ui: &mut egui::Ui) -> Option<FilmstripIntent> {
-        let photos: Vec<FilmstripPhoto<'_>> = self
-            .catalog
-            .current()
-            .photos()
-            .iter()
-            .zip(&self.thumbnails)
-            .zip(&self.edited_marks)
-            .map(|((path, thumbnail), is_edited)| FilmstripPhoto {
-                path,
-                thumbnail,
-                is_edited: *is_edited,
+    /// The shown photos of the open series, as the filmstrip and the grid show them.
+    fn photo_thumbnails(&self) -> Vec<PhotoThumbnail<'_>> {
+        let catalog = self.catalog.current();
+        let shown = catalog.shown_photos().into_iter();
+        shown
+            .map(|photo| {
+                let path = &catalog.photos()[photo];
+                PhotoThumbnail {
+                    path,
+                    thumbnail: &self.thumbnails[photo],
+                    is_edited: self.edited_marks[photo],
+                    mark: catalog.mark_of(path),
+                }
             })
-            .collect();
+            .collect()
+    }
+
+    /// Where the selected photo is among the shown ones.
+    fn selected_position(&self) -> Option<usize> {
+        let catalog = self.catalog.current();
+        let selected = catalog.selected_index()?;
+        let mut shown = catalog.shown_photos().into_iter();
+        shown.position(|photo| photo == selected)
+    }
+
+    /// Returns what the user asked of the grid, and whether to show every photo.
+    fn grid_panel(&self, ui: &mut egui::Ui) -> (Option<GridIntent>, bool) {
+        let photos = self.photo_thumbnails();
+        let catalog = self.catalog.current();
+        let is_in_selection: Vec<bool> = match catalog.selected_index() {
+            Some(selected) => {
+                let shown = catalog.shown_photos().into_iter();
+                shown
+                    .map(|photo| self.selection.contains(photo, selected))
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        let margins = 2.0 * space::M;
+        let widest = ui.available_width() - NARROWEST_PREVIEW;
+        egui::Panel::left("photo grid")
+            .resizable(true)
+            .default_size(PHOTO_GRID_WIDTH + margins)
+            .size_range(NARROWEST_PHOTO_GRID + margins..=widest)
+            .frame(panel_frame(space::M))
+            .show(ui, |ui| {
+                let has_rejected_photos = !catalog.rejected_photos().is_empty();
+                let trash_rejected =
+                    grid_header(ui, has_rejected_photos).then_some(GridIntent::TrashRejected);
+                if photos.is_empty() {
+                    return (trash_rejected, no_photo_shown(ui, catalog.filter()));
+                }
+                let shown = GridShown {
+                    photos: &photos,
+                    selected: self.selected_position(),
+                    is_in_selection: &is_in_selection,
+                };
+                (photo_grid(ui, &shown).or(trash_rejected), false)
+            })
+            .inner
+    }
+
+    /// The photos of the selection, by their place in the open series.
+    fn selected_photos(&self) -> Vec<usize> {
+        let selected = self.catalog.current().selected_index();
+        selected.map_or_else(Vec::new, |selected| self.selection.photos(selected))
+    }
+
+    /// Returns the rating a clicked star asks for.
+    fn photo_details_panel(&self, ui: &mut egui::Ui) -> Option<Rating> {
+        let photo = self.catalog.current().selected_photo()?;
+        let shooting_data = match &self.viewed {
+            ViewedPhoto::Ready { shooting_data, .. } => *shooting_data,
+            _ => ShootingData::default(),
+        };
+        let shown = PhotoDetailsShown {
+            name: &photo_name(photo),
+            shooting_data: &shooting_data,
+            details: &self.photo_details,
+            selection_size: self.selected_photos().len(),
+        };
+        let mark = self.catalog.current().mark_of(photo);
+        egui::Panel::bottom("photo details")
+            .exact_size(PHOTO_DETAILS_HEIGHT + MARK_LINE_HEIGHT + space::XS)
+            .frame(panel_frame(space::M))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                let rating_asked = mark_line(ui, mark);
+                photo_details_lines(ui, &shown);
+                rating_asked
+            })
+            .inner
+    }
+
+    fn filmstrip_panel(&self, ui: &mut egui::Ui) -> Option<FilmstripIntent> {
+        let photos = self.photo_thumbnails();
         egui::Panel::bottom("filmstrip")
             .exact_size(FILMSTRIP_HEIGHT)
             .frame(panel_frame(space::M))
-            .show(ui, |ui| {
-                filmstrip(ui, &photos, self.catalog.current().selected_index())
-            })
+            .show(ui, |ui| filmstrip(ui, &photos, self.selected_position()))
             .inner
     }
 }
@@ -1114,12 +1657,14 @@ impl eframe::App for ZivApp {
         self.receive_detection();
         self.receive_enhancement();
         self.open_dropped_files(ui);
-        let is_dialog_open = self.photos_to_export.is_some();
+        let is_dialog_open = self.photos_to_export.is_some() || self.photos_to_trash.is_some();
         if !is_dialog_open {
             self.undo_or_redo(ui);
             self.toggle_before_on_its_key(ui);
             self.copy_or_paste_edit_on_shortcut(ui);
             self.ask_to_export_on_shortcut(ui);
+            self.switch_mode_on_its_key(ui);
+            self.mark_on_its_keys(ui);
         }
         self.save_settled_edits(ui);
         let mut open_requested = ui.input_mut(|input| input.consume_shortcut(&OPEN_SHORTCUT));
@@ -1132,12 +1677,30 @@ impl eframe::App for ZivApp {
             true => self.series_side_panel(ui),
             false => None,
         };
-        let shown = self.develop_side_panel(ui);
-        self.follow_histogram(&shown);
-        let filmstrip_intent = if self.catalog.current().photos().is_empty() {
-            None
-        } else {
-            self.filmstrip_panel(ui)
+        let has_photos = !self.catalog.current().photos().is_empty();
+        let has_shown_photos = !self.catalog.current().shown_photos().is_empty();
+        let filter = self.catalog.current().filter();
+        let mut is_show_all_asked = false;
+        let is_developing = self.mode == WindowMode::Develop;
+        let mut filmstrip_intent = None;
+        let mut grid_intent = None;
+        let mut rating_asked = None;
+        let shown = match self.mode {
+            WindowMode::Develop => {
+                let shown = self.develop_side_panel(ui);
+                self.follow_histogram(&shown);
+                if has_shown_photos {
+                    filmstrip_intent = self.filmstrip_panel(ui);
+                }
+                shown
+            }
+            WindowMode::Cull => {
+                if has_photos {
+                    (grid_intent, is_show_all_asked) = self.grid_panel(ui);
+                    rating_asked = self.photo_details_panel(ui);
+                }
+                self.photo_as_shot()
+            }
         };
         let mut zoom_shown = None;
         let mut masks_on_screen = None;
@@ -1148,7 +1711,11 @@ impl eframe::App for ZivApp {
             self.detection_status_over(ui);
             self.enhancement_progress_over(ui);
             match &mut self.viewed {
-                ViewedPhoto::None => open_requested |= empty_state(ui),
+                ViewedPhoto::None if !has_photos => open_requested |= empty_state(ui),
+                ViewedPhoto::None if is_developing => {
+                    is_show_all_asked |= no_photo_shown(ui, filter)
+                }
+                ViewedPhoto::None => {}
                 ViewedPhoto::Loading(path) => photo_loading(ui, path),
                 ViewedPhoto::Ready { photo, view, .. } => {
                     let output = photo_viewport(ui, photo.size(), *view, |placement| {
@@ -1156,7 +1723,7 @@ impl eframe::App for ZivApp {
                     });
                     *view = output.view;
                     zoom_shown = Some(zoom_readout(&output.view, output.scale));
-                    masks_on_screen = Some(PhotoOnScreen {
+                    masks_on_screen = is_developing.then_some(PhotoOnScreen {
                         area: ui.max_rect(),
                         whole_photo: output.whole_photo_rect,
                     });
@@ -1176,6 +1743,7 @@ impl eframe::App for ZivApp {
 
         self.zoom_readout = zoom_shown;
         self.export_dialog_window(ui);
+        self.trash_confirmation_window(ui);
         if is_dialog_open {
             return;
         }
@@ -1188,6 +1756,15 @@ impl eframe::App for ZivApp {
         if let Some(intent) = filmstrip_intent {
             self.apply(intent);
         }
+        if let Some(intent) = grid_intent {
+            self.apply_to_grid(intent);
+        }
+        if let Some(rating) = rating_asked {
+            self.rate_selection(rating);
+        }
+        if is_show_all_asked {
+            self.filter_series(SeriesFilter::All);
+        }
         if open_requested {
             self.open_picked_photos();
         }
@@ -1196,6 +1773,7 @@ impl eframe::App for ZivApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, EXPORT_SETTINGS_KEY, &self.export_settings);
         eframe::set_value(storage, SIDEBAR_SHOWN_KEY, &self.is_sidebar_shown);
+        eframe::set_value(storage, WINDOW_MODE_KEY, &self.mode);
     }
 
     fn on_exit(&mut self) {

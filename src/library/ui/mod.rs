@@ -1,3 +1,9 @@
 pub mod empty_state;
 pub mod filmstrip;
+pub mod mark_line;
+pub mod no_photo_shown;
+pub mod photo_grid;
+pub mod photo_thumbnail;
+pub mod series_filter_switch;
 pub mod series_sidebar;
+pub mod trash_confirmation;

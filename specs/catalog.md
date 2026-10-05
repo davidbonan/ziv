@@ -17,8 +17,9 @@ a sidebar, and the app reopens on the series and the photo last looked at.
 
 **Out**
 - Series made by hand: mixing photos of several series, moving a photo to
-  another series, removing one photo from a series.
-- Search, filters, ratings, flags, grid view, sub-folder recursion.
+  another series.
+- Search, sub-folder recursion. Ratings, the rejected mark, the filter, the
+  grid and removing one photo from a series came later: `culling.md`.
 - Locating one missing photo of a series that still has others.
 - Cleaning the thumbnail cache.
 - Remembering the zoom, the pan or the undo history between launches.

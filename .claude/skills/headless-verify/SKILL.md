@@ -115,6 +115,13 @@ a headless run: never drive them. State is injected through a constructor seam:
   deadline, until the label `Photo` appears. `harness.run()` panics while the
   spinner is on screen (it repaints forever).
 
+  An import of a new series lands in Cull mode (`specs/culling.md` rule 4):
+  `harness.key_press(egui::Key::D)` then `harness.step()` for Develop mode.
+
+- `.trashing_with(trash)` chained on it — files "moved to the Trash" go to
+  `trash` (any `PhotoTrash`, e.g. one renaming them into a folder of the run)
+  instead of this Mac's Trash: never let a harness reach the real one.
+
 - `.exporting_to(folder)` chained on it — as if the export destination had
   already been chosen (the folder picker cannot be driven). Export settings are
   not persisted in a headless run: there is no eframe storage.

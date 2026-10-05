@@ -38,6 +38,14 @@ impl Orientation {
         )
     }
 
+    /// The size, once upright, of a picture stored as `[width, height]`.
+    pub fn upright_size(self, [width, height]: [u32; 2]) -> [u32; 2] {
+        match self.swaps_width_and_height() {
+            true => [height, width],
+            false => [width, height],
+        }
+    }
+
     /// Stored position of the pixel that ends up at `(x, y)` once upright.
     pub fn stored_position(self, [x, y]: [u32; 2], [width, height]: [u32; 2]) -> [u32; 2] {
         let (last_x, last_y) = (width - 1, height - 1);

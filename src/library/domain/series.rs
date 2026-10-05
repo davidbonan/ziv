@@ -1,8 +1,10 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::import_day::ImportDay;
+use super::series_filter::SeriesFilter;
 use super::session::Session;
 
 /// What the user opened at once: the photos found, and the folder they come
@@ -24,6 +26,11 @@ pub struct Series {
     pub folder: Option<PathBuf>,
     pub imported_on: ImportDay,
     pub session: Session,
+    #[serde(default)]
+    pub filter: SeriesFilter,
+    /// The photos the user removed from a folder series: importing the folder again leaves them out.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub removed: BTreeSet<PathBuf>,
 }
 
 fn folder_name(folder: &Path) -> String {
@@ -54,7 +61,32 @@ impl Series {
             folder: import.folder,
             imported_on: day,
             session,
+            filter: SeriesFilter::All,
+            removed: BTreeSet::new(),
         })
+    }
+
+    /// Brings in the photos of `photos` that the series neither has nor had removed.
+    pub fn add(&mut self, photos: Vec<PathBuf>) {
+        let photos = photos.into_iter();
+        self.session.add(
+            photos
+                .filter(|photo| !self.removed.contains(photo))
+                .collect(),
+        );
+    }
+
+    /// Takes `photos` out of the series; a folder series remembers them.
+    pub fn remove(&mut self, photos: &[PathBuf]) {
+        self.session.remove(photos);
+        if self.folder.is_some() {
+            self.removed.extend(photos.iter().cloned());
+        }
+    }
+
+    /// Takes `photos` out without remembering them: their files are gone.
+    pub fn forget(&mut self, photos: &[PathBuf]) {
+        self.session.remove(photos);
     }
 
     /// The first photos of the series.

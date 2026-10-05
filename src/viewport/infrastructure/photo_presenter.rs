@@ -67,9 +67,9 @@ impl PhotoPresenter {
         }
     }
 
-    pub fn present(&self, source: SourceTexture) -> PresentedPhoto {
+    pub fn present(&self, source: Arc<SourceTexture>) -> PresentedPhoto {
         PresentedPhoto {
-            source: Arc::new(source),
+            source,
             output: None,
             egui_renderer: self.egui_renderer.clone(),
         }
