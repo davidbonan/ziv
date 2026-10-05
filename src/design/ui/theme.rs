@@ -4,29 +4,28 @@ use egui::epaint::text::{FontData, FontDefinitions};
 use egui::style::{Selection, WidgetVisuals};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Stroke, TextStyle, vec2};
 
-/// Surfaces and text are neutral greys: nothing around a photo tints how its
-/// colors are judged. The accent is the only hue of the interface.
+/// Surfaces and text share one faint night-blue cast, the accent its bright end.
 pub mod color {
     use egui::Color32;
 
     /// Around the photo.
-    pub const CANVAS: Color32 = Color32::from_gray(0x1B);
+    pub const CANVAS: Color32 = Color32::from_rgb(0x12, 0x15, 0x1A);
     /// Panels beside and below the photo.
-    pub const PANEL: Color32 = Color32::from_gray(0x26);
+    pub const PANEL: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x25);
     /// Buttons, fields, thumbnail cells.
-    pub const RAISED: Color32 = Color32::from_gray(0x33);
-    pub const RAISED_HOVERED: Color32 = Color32::from_gray(0x3D);
-    pub const TRACK: Color32 = Color32::from_gray(0x47);
+    pub const RAISED: Color32 = Color32::from_rgb(0x25, 0x2A, 0x33);
+    pub const RAISED_HOVERED: Color32 = Color32::from_rgb(0x2E, 0x34, 0x40);
+    pub const TRACK: Color32 = Color32::from_rgb(0x3B, 0x42, 0x50);
     /// The groove between two surfaces.
-    pub const HAIRLINE: Color32 = Color32::from_gray(0x12);
-    pub const TEXT: Color32 = Color32::from_gray(0xE4);
-    pub const TEXT_MUTED: Color32 = Color32::from_gray(0x9B);
-    pub const TEXT_DISABLED: Color32 = Color32::from_gray(0x5C);
-    /// Darkroom safelight amber: selection, and values away from their default.
-    pub const ACCENT: Color32 = Color32::from_rgb(0xF0, 0xA2, 0x3B);
+    pub const HAIRLINE: Color32 = Color32::from_rgb(0x0A, 0x0C, 0x10);
+    pub const TEXT: Color32 = Color32::from_rgb(0xE3, 0xE7, 0xEE);
+    pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x8F, 0x98, 0xA8);
+    pub const TEXT_DISABLED: Color32 = Color32::from_rgb(0x53, 0x5A, 0x68);
+    /// Glacier blue: selection, and values away from their default.
+    pub const ACCENT: Color32 = Color32::from_rgb(0x7A, 0xB8, 0xFF);
     /// Text on a surface filled with the accent.
-    pub const ON_ACCENT: Color32 = Color32::from_rgb(0x1B, 0x13, 0x00);
-    pub const DANGER: Color32 = Color32::from_rgb(0xE0, 0x70, 0x5A);
+    pub const ON_ACCENT: Color32 = Color32::from_rgb(0x06, 0x18, 0x2C);
+    pub const DANGER: Color32 = Color32::from_rgb(0xF0, 0x7A, 0x6A);
     /// Pure white at low opacity: a tinted outline reads as dirt on a picture's edge.
     pub const PICTURE_OUTLINE: Color32 = Color32::from_rgba_premultiplied(26, 26, 26, 26);
 }

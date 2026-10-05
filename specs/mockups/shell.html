@@ -8,17 +8,17 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --canvas: #1b1b1b;
-  --panel: #242424;
-  --raised: #303030;
-  --raised-hover: #3a3a3a;
-  --track: #474747;
-  --hairline: #111111;
-  --text: #e4e4e4;
-  --muted: #9a9a9a;
-  --disabled: #5c5c5c;
-  --accent: #f0a23b;
-  --danger: #e0705a;
+  --canvas: #12151a;
+  --panel: #1a1e25;
+  --raised: #252a33;
+  --raised-hover: #2e3440;
+  --track: #3b4250;
+  --hairline: #0a0c10;
+  --text: #e3e7ee;
+  --muted: #8f98a8;
+  --disabled: #535a68;
+  --accent: #7ab8ff;
+  --danger: #f07a6a;
   --side-w: 236px;
   --panel-w: 308px;
   --radius: 5px;
@@ -67,8 +67,8 @@ button:focus-visible, [tabindex]:focus-visible { outline: 1.5px solid var(--acce
   background: var(--raised); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
 }
 .btn:hover { background: var(--raised-hover); }
-.btn.primary { background: var(--accent); color: #1b1300; font-weight: 500; }
-.btn.primary:hover { background: #f6b257; }
+.btn.primary { background: var(--accent); color: #06182c; font-weight: 500; }
+.btn.primary:hover { background: #99c9ff; }
 .btn.quiet { background: none; color: var(--muted); }
 .btn.quiet:hover { background: var(--raised); color: var(--text); }
 .icon {
@@ -91,7 +91,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 1.5px solid var(--acce
   display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center;
   padding: 6px 8px; border-radius: var(--radius); cursor: pointer;
 }
-.series li:hover { background: #2b2b2b; }
+.series li:hover { background: #20252d; }
 .series li[aria-current="true"] { background: var(--raised); }
 .series li[aria-current="true"] .name { color: var(--accent); }
 .series .stack { width: 40px; height: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; border-radius: 3px; overflow: hidden; }
@@ -144,7 +144,7 @@ button:focus-visible, [tabindex]:focus-visible { outline: 1.5px solid var(--acce
 /* ---------- Develop panel ---------- */
 .panel { grid-area: panel; background: var(--panel); border-left: 1px solid var(--hairline); display: flex; flex-direction: column; min-height: 0; }
 .histo { padding: 12px 14px 8px; }
-.histo svg { display: block; width: 100%; height: 64px; background: #1d1d1d; border-radius: 3px; }
+.histo svg { display: block; width: 100%; height: 64px; background: #151920; border-radius: 3px; }
 .exif { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted); font: 400 11px/1 var(--num); font-variant-numeric: tabular-nums; }
 .tool-row { padding: 2px 10px 8px; border-bottom: 1px solid var(--hairline); }
 .scroll { overflow-y: auto; flex: 1; }
@@ -175,13 +175,13 @@ section[open-s] .body { display: block; }
 
 .masks { list-style: none; padding: 0; margin: 0 -6px 4px; }
 .masks li { display: flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; height: 30px; border-radius: var(--radius); cursor: pointer; }
-.masks li:hover { background: #2b2b2b; }
+.masks li:hover { background: #20252d; }
 .masks li[aria-current="true"] { background: var(--raised); }
 .masks li[aria-current="true"] span { color: var(--accent); }
 .masks li span { flex: 1; }
 .masks li em { font-style: normal; color: var(--muted); font-size: 11px; margin-right: 6px; }
 .masks .icon { width: 24px; height: 24px; }
-.sub { margin: 8px -14px -12px; padding: 4px 14px 10px; background: #1f1f1f; border-top: 1px solid var(--hairline); }
+.sub { margin: 8px -14px -12px; padding: 4px 14px 10px; background: #161a20; border-top: 1px solid var(--hairline); }
 .sub .head { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
 .sub .head b { font-weight: 500; flex: 1; }
 .enhance { display: flex; gap: 8px; align-items: center; padding: 2px 0 8px; color: var(--muted); }
