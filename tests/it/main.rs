@@ -50,4 +50,8 @@ mod ui_tone_curve_graph;
 mod ui_tone_curve_section;
 mod ui_top_bar;
 mod ui_trash_confirmation;
+mod ui_update_strip;
+mod ui_updates_dialog;
+mod ui_whats_new;
+mod update_e2e;
 mod zones_e2e;

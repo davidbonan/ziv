@@ -19,6 +19,7 @@ imported series again at the next launch.
 | F7 | Series catalog — imports kept as series in a sidebar, work resumed at the next launch | [`catalog.md`](catalog.md) |
 | F10 | Culling — grid and fast preview, ratings, rejected mark, series filter, removal and Trash | [`culling.md`](culling.md) |
 | F11 | Crop and straighten — crop frame, aspect ratios, angle, quarter turns, mirror | [`crop-and-straighten.md`](crop-and-straighten.md) |
+| F12 | Distribution and update — app bundle, GitHub releases, in-app update, release notes | [`update.md`](update.md) |
 
 A feature has no spec until `/spec` writes `specs/<feature>.md`.
 
@@ -42,10 +43,12 @@ Changed only through a new ADR (`specs/adr/`).
 | Export output | sRGB 8-bit, untagged; display stage rendered in strips; `image` encoders | 0004 |
 | App settings | `eframe` persistence | 0004 |
 | AI runtime | `ort` 2.0.0-rc.13 (ONNX Runtime), CPU (GPU for the enhancement, 0010); models downloaded at first use, checked by SHA-256 | 0006 |
-| Zone models | BiRefNet lite, skyseg, RF-DETR small, SegFormer clothes and face parsing (the last two: personal use only, to be replaced before any distribution) | 0007 |
+| Zone models | BiRefNet lite, skyseg, RF-DETR small, SegFormer clothes and face parsing (the last two: non-commercial, never in the bundle, fetched by the user from their publisher) | 0007, 0016 |
 | Enhancement | DRUNet colour on the GPU (Core ML) in 512² tiles on the working image, told the photo's noise level; result kept beside the photo as a lossless difference; mixed by intensity in the display stage | 0008, 0009, 0010 |
 | Masks | photo-unit geometry; gradients and shapes analytic in the display stage, brush rasterized from strokes; 16 masks per photo | 0005 |
 | Color stages | color mixer in Oklch of the working pixel, after the masks; color grading then tone curve on display-encoded values, after the clamp; curves sampled into a 256-texel lookup; photo only, never on a mask | 0014 |
+| Distribution | GitHub Releases of the public repository, `v<semver>` tags built by CI; `ziv.app` signed ad-hoc, zipped as `ziv-macos.zip`; installed by a `curl` script; `Cargo.toml` is the single version | 0016 |
+| In-app update | check of `releases/latest` and download through `ureq`; `ditto`, `codesign --verify --strict`, rename, `open -n`; release notes embedded in the binary, shown with `egui_commonmark` | 0016 |
 | Framing | the part of the source a render asks for, a parallelogram; frame in fractions of the picture, angle, one of eight orientations applied last; masks stay in photo units of the picture; trilinear resampling | 0015 |
 
 ## 4. Open decisions
@@ -55,4 +58,4 @@ Each one is settled by an ADR before the milestone that needs it starts.
 |----------|-----------|------|
 | Wide-gamut display output (Display P3), surface tagging on macOS | — | — |
 | ICC profiles: embedded input profiles, export profile | — | — |
-| Distribution: `.app` bundle, signing, LGPL compliance for `rawler` | before first release | — |
+| Licence of ziv's own source | before first release | — |

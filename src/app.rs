@@ -90,6 +90,17 @@ use crate::photo::ui::photo_details_lines::{
 use crate::photo::ui::shooting_data_line::shooting_data_line;
 use crate::shell::domain::window_mode::WindowMode;
 use crate::shell::ui::top_bar::{TOP_BAR_HEIGHT, TopBarIntent, TopBarShown, top_bar};
+use crate::update::application::update_run::UpdateRun;
+use crate::update::domain::update_state::UpdateState;
+use crate::update::domain::version::Version;
+use crate::update::domain::whats_new::WhatsNew;
+use crate::update::infrastructure::app_update::AppUpdate;
+use crate::update::infrastructure::relaunch::relaunch;
+use crate::update::infrastructure::running_app_bundle::running_app_bundle;
+use crate::update::ui::running_version_button::running_version_button;
+use crate::update::ui::update_strip::{UpdateStripIntent, UpdateStripShown, update_strip};
+use crate::update::ui::updates_dialog::{UpdatesDialogIntent, UpdatesShown, updates_dialog};
+use crate::update::ui::whats_new::whats_new;
 use crate::viewport::domain::view::View;
 use crate::viewport::domain::zoom_readout::zoom_readout;
 use crate::viewport::infrastructure::photo_presenter::{
@@ -118,6 +129,7 @@ const OPEN_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND
 const EXPORT_SETTINGS_KEY: &str = "export settings";
 const SIDEBAR_SHOWN_KEY: &str = "series sidebar shown";
 const WINDOW_MODE_KEY: &str = "window mode";
+const SEEN_VERSION_KEY: &str = "seen version";
 const CULL_KEY: Key = Key::G;
 const DEVELOP_KEY: Key = Key::D;
 const REJECT_KEY: Key = Key::X;
@@ -290,6 +302,17 @@ pub struct ZivApp {
     /// The persons found in the viewed photo, while the user chooses among them.
     people_pick: Option<PeoplePick>,
     enhancement: Option<PhotoEnhancement>,
+    /// `None` for an app that cannot update itself: it runs outside an app bundle.
+    update: Option<UpdateRun>,
+    /// An install was running at the last frame.
+    was_update_installing: bool,
+    is_relaunch_asked: bool,
+    is_update_strip_dismissed: bool,
+    is_updates_dialog_open: bool,
+    is_whats_new_shown: bool,
+    /// The last version whose release notes were shown or taken as the baseline.
+    seen_version: Option<Version>,
+    release_notes_layout: egui_commonmark::CommonMarkCache,
 }
 
 /// What the files of a series say about it.
@@ -391,6 +414,19 @@ impl ZivApp {
             .storage
             .and_then(|storage| eframe::get_value(storage, WINDOW_MODE_KEY))
             .unwrap_or_default();
+        let stored_seen_version = creation
+            .storage
+            .and_then(|storage| eframe::get_value(storage, SEEN_VERSION_KEY));
+        let update = running_app_bundle().map(|app_bundle| {
+            let egui_context = egui_context.clone();
+            UpdateRun::new(AppUpdate::of_ziv_in(app_bundle), move || {
+                egui_context.request_repaint()
+            })
+        });
+        let whats_new = match &update {
+            Some(_) => WhatsNew::at_launch(Version::of_this_build(), stored_seen_version),
+            None => WhatsNew::Nothing,
+        };
         let catalog_path = catalog_file.path();
         let catalog = StoredCatalog::read_from(catalog_file);
         let mut app = Self {
@@ -440,7 +476,21 @@ impl ZivApp {
             straightened_from: None,
             mask_selection: MaskSelection::default(),
             copied_edit: None,
+            update,
+            was_update_installing: false,
+            is_relaunch_asked: false,
+            is_update_strip_dismissed: false,
+            is_updates_dialog_open: false,
+            is_whats_new_shown: whats_new == WhatsNew::Show,
+            seen_version: match whats_new {
+                WhatsNew::Nothing => stored_seen_version,
+                WhatsNew::TakeAsSeen | WhatsNew::Show => Some(Version::of_this_build()),
+            },
+            release_notes_layout: egui_commonmark::CommonMarkCache::default(),
         };
+        if let Some(update) = &app.update {
+            update.check_quietly();
+        }
         app.show_open_series();
         app
     }
@@ -1562,6 +1612,102 @@ impl ZivApp {
         }
     }
 
+    fn can_update_be_installed(&self) -> bool {
+        self.export_run.is_none() && self.enhancement.is_none()
+    }
+
+    /// Relaunches once the new version is in place; says why an install failed.
+    fn follow_update(&mut self, frame: &mut eframe::Frame) {
+        let Some(update) = &self.update else {
+            return;
+        };
+        let state = update.state();
+        let was_installing = self.was_update_installing;
+        self.was_update_installing = state.is_installing();
+        match state {
+            UpdateState::Installed(app_bundle) if !self.is_relaunch_asked => {
+                self.is_relaunch_asked = true;
+                self.relaunch_into(&app_bundle, frame);
+            }
+            UpdateState::Failed(reason) if was_installing => self.show_notice(reason),
+            _ => {}
+        }
+    }
+
+    fn relaunch_into(&mut self, app_bundle: &Path, frame: &mut eframe::Frame) {
+        let failure = self.edits.save_now();
+        self.report(failure);
+        if let Some(storage) = frame.storage_mut() {
+            eframe::App::save(self, storage);
+            storage.flush();
+        }
+        match relaunch(app_bundle) {
+            Ok(()) => self
+                .egui_context
+                .send_viewport_cmd(egui::ViewportCommand::Close),
+            Err(error) => self.show_notice(format!(
+                "The new version is installed but could not be launched: {error}"
+            )),
+        }
+    }
+
+    /// Above the places of the other messages.
+    fn update_strip_over(&mut self, ui: &egui::Ui) {
+        let Some(update) = &self.update else {
+            return;
+        };
+        let state = update.state();
+        if self.is_update_strip_dismissed && !state.is_installing() {
+            return;
+        }
+        let shown = UpdateStripShown {
+            state: &state,
+            can_install: self.can_update_be_installed(),
+        };
+        let over = ui
+            .max_rect()
+            .translate(egui::vec2(0.0, -2.0 * PILL_STACKING_STEP));
+        match update_strip(ui, over, &shown) {
+            Some(UpdateStripIntent::Install) => update.install(),
+            Some(UpdateStripIntent::Later) => self.is_update_strip_dismissed = true,
+            None => {}
+        }
+    }
+
+    fn updates_dialog_window(&mut self, ui: &egui::Ui) {
+        if !self.is_updates_dialog_open {
+            return;
+        }
+        let state = self.update.as_ref().map(UpdateRun::state);
+        let shown = UpdatesShown {
+            running: Version::of_this_build(),
+            state: state.as_ref(),
+            can_install: self.can_update_be_installed(),
+        };
+        let modal = egui::Modal::new(egui::Id::new("updates dialog"))
+            .frame(egui::Frame::window(ui.style()).inner_margin(space::L))
+            .show(ui.ctx(), |ui| {
+                updates_dialog(ui, &shown, &mut self.release_notes_layout)
+            });
+        match (modal.inner, &self.update) {
+            (Some(UpdatesDialogIntent::Check), Some(update)) => update.check(),
+            (Some(UpdatesDialogIntent::Install), Some(update)) => update.install(),
+            (Some(UpdatesDialogIntent::Close), _) => self.is_updates_dialog_open = false,
+            (None, _) if modal.should_close() => self.is_updates_dialog_open = false,
+            _ => {}
+        }
+    }
+
+    fn whats_new_window(&mut self, ui: &egui::Ui) {
+        if !self.is_whats_new_shown {
+            return;
+        }
+        let modal = egui::Modal::new(egui::Id::new("what's new"))
+            .frame(egui::Frame::window(ui.style()).inner_margin(space::L))
+            .show(ui.ctx(), |ui| whats_new(ui, &mut self.release_notes_layout));
+        self.is_whats_new_shown = !modal.inner && !modal.should_close();
+    }
+
     fn edits_left_alone_reason(&self) -> Option<&str> {
         self.edits
             .unusable_storage_of(self.catalog.current().selected_photo()?)
@@ -1699,7 +1845,7 @@ impl ZivApp {
         }
     }
 
-    fn series_side_panel(&self, ui: &mut egui::Ui) -> Option<SidebarIntent> {
+    fn series_side_panel(&mut self, ui: &mut egui::Ui) -> Option<SidebarIntent> {
         let catalog = self.catalog.current();
         let rows: Vec<SeriesRow<'_>> = catalog
             .series()
@@ -1718,6 +1864,12 @@ impl ZivApp {
             .exact_size(SERIES_SIDEBAR_WIDTH)
             .frame(panel_frame(space::S))
             .show(ui, |ui| {
+                self.is_updates_dialog_open |= egui::Panel::bottom("running version")
+                    .frame(egui::Frame::new())
+                    .show(ui, |ui| {
+                        running_version_button(ui, Version::of_this_build()).clicked()
+                    })
+                    .inner;
                 let shown = SeriesShown {
                     rows: &rows,
                     open: catalog.open_index(),
@@ -1856,14 +2008,18 @@ impl ZivApp {
 }
 
 impl eframe::App for ZivApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.follow_update(frame);
         self.receive_viewed_photo();
         self.receive_thumbnails();
         self.covers.receive_loaded();
         self.receive_detection();
         self.receive_enhancement();
         self.open_dropped_files(ui);
-        let is_dialog_open = self.photos_to_export.is_some() || self.photos_to_trash.is_some();
+        let is_dialog_open = self.photos_to_export.is_some()
+            || self.photos_to_trash.is_some()
+            || self.is_updates_dialog_open
+            || self.is_whats_new_shown;
         if !is_dialog_open {
             self.undo_or_redo(ui);
             self.crop_on_its_keys(ui);
@@ -1921,6 +2077,7 @@ impl eframe::App for ZivApp {
             self.export_progress_over(ui);
             self.detection_status_over(ui);
             self.enhancement_progress_over(ui);
+            self.update_strip_over(ui);
             match &mut self.viewed {
                 ViewedPhoto::None if !has_photos => open_requested |= empty_state(ui),
                 ViewedPhoto::None if is_developing => {
@@ -1982,6 +2139,8 @@ impl eframe::App for ZivApp {
         self.zoom_readout = zoom_shown;
         self.export_dialog_window(ui);
         self.trash_confirmation_window(ui);
+        self.updates_dialog_window(ui);
+        self.whats_new_window(ui);
         if is_dialog_open {
             return;
         }
@@ -2012,6 +2171,9 @@ impl eframe::App for ZivApp {
         eframe::set_value(storage, EXPORT_SETTINGS_KEY, &self.export_settings);
         eframe::set_value(storage, SIDEBAR_SHOWN_KEY, &self.is_sidebar_shown);
         eframe::set_value(storage, WINDOW_MODE_KEY, &self.mode);
+        if let Some(seen) = self.seen_version {
+            eframe::set_value(storage, SEEN_VERSION_KEY, &seen);
+        }
     }
 
     fn on_exit(&mut self) {

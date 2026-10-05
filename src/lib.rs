@@ -10,5 +10,6 @@ pub mod library;
 pub mod models;
 pub mod photo;
 pub mod shell;
+pub mod update;
 pub mod viewport;
 pub mod zones;

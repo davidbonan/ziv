@@ -8,10 +8,14 @@
    place of the grid separator (K6) survive a relaunch: both ride on `eframe`
    storage, which a headless run does not have. Everything else of M10 is
    verified.
-2. No milestone framed after M12: `/spec` the next feature.
+2. M13.7 — check by hand in a bundled app what a headless run cannot reach:
+   check at launch, strip, install and relaunch, seen version, What's new.
+   Needs a published release (M13.9). Unbundled behavior is verified.
+3. M13.8 — `/release` is written, never run: its first run is M13.9.
 
 ## Blockers
-None.
+- M13.9 — the repository is private and ziv's source has no licence
+  (`specs/update.md` §7): both are the author's to settle before a release.
 
 ---
 
@@ -356,3 +360,34 @@ the framing again; export the framed file.
   *Spec*: rules 30, 32–39 · F16–F19. *Depends*: M12.5. *Tests*: U, Eb, Eu.
 - ☑ **M12.8 — Demo.** *Spec*: rule 40 · F20. *Depends*: M12.2, M12.4, M12.6,
   M12.7. *Tests*: HV.
+
+## ◐ M13 — Distribution and update · 6/9
+ziv installed as an application, updating itself from GitHub Releases, showing
+its release notes. Feature F12. *Spec*: `specs/update.md` (ADR 0016). *Demo*:
+publish two versions with `/release`, install the first with the install
+script, let it find the second, install it from the app and read What's new.
+
+- ☑ **M13.1 — Package and release pipeline.** Bundle script, install script,
+  release workflow on a version tag, README. *Spec*: `specs/update.md` rules
+  1–3 · P1–P3. *Tests*: run of the bundle script.
+- ☑ **M13.2 — Update check.** Version, release answer, check against GitHub's
+  latest release. *Spec*: rules 6, 7 · P4–P6. *Tests*: U, Eb.
+- ☑ **M13.3 — Update install.** App bundle of the executable; download,
+  unpack, signature validation, swap with rollback, relaunch. *Spec*: rules
+  8–10 · P7–P10. *Tests*: U, Eb.
+- ☑ **M13.4 — Update run.** States, worker thread, one operation at a time,
+  silent failure at launch. *Spec*: rules 4, 5, 12 · P11. *Depends*: M13.2,
+  M13.3. *Tests*: U.
+- ☑ **M13.5 — Release notes and What's new decision.** Notes embedded in the
+  binary, seen version. *Spec*: rules 19–23 · P15, P16. *Depends*: M13.2.
+  *Tests*: U.
+- ☑ **M13.6 — Update strip, Updates dialog, What's new window, version in the
+  sidebar.** *Spec*: rules 14–18, 21 · P12–P14, P17. *Depends*: M13.4, M13.5.
+  *Tests*: Eu.
+- ◐ **M13.7 — Update in the app.** Check at launch, strip, dialog, install and
+  relaunch with everything saved, seen version remembered, no install during
+  an export or an enhancement. *Spec*: rules 4, 8, 11, 13, 21–24 · P18.
+  *Depends*: M13.6. *Tests*: HV.
+- ◐ **M13.8 — `/release` skill.** *Spec*: rule 25. *Depends*: M13.1, M13.5.
+  *Tests*: read in review.
+- ⊘ **M13.9 — Demo.** *Spec*: P19. *Depends*: M13.7, M13.8. *Tests*: by hand.

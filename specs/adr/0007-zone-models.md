@@ -1,6 +1,6 @@
 # ADR 0007 — Zone mask models
 
-- **Status**: accepted
+- **Status**: accepted; the consequence on distribution is superseded by 0016
 - **Date**: 2026-10-02
 
 ## Context

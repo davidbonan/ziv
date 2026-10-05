@@ -80,6 +80,12 @@ src/zones/domain/                the zone models, model input, mattes and their 
 src/zones/application/           ZoneDetector: photo → zone masks, persons, person parts; DetectionRun (worker thread)
 src/zones/ui/                    detection status and its messages, people picker and person outlines
 src/zones/infrastructure/        photo view rendered by the engine
+src/update/domain/               Version, PublishedRelease (GitHub's answer read), UpdateCheck, UpdateState, the app bundle of an executable,
+                                 release notes embedded in the binary, WhatsNew; port: UpdateSteps
+src/update/application/          UpdateRun: one check or one install at a time, each on its own thread
+src/update/infrastructure/       GithubReleases (`ureq`), update staging (`ditto`, `codesign`), app bundle swap, relaunch (`open`), AppUpdate
+src/update/ui/                   update strip, Updates dialog, What's new, running version button, release notes text (`egui_commonmark`)
+assets/brand/                    logo and app icon (SVG), `icon.icns` copied into the app bundle
 assets/fonts/                    IBM Plex Sans (OFL), embedded in the binary
 tests/it/main.rs                 single integration binary
 tests/it/ui_*.rs                 UI e2e
@@ -114,6 +120,9 @@ Modules are added by the milestone that needs them, not ahead of it.
 - **Export worker** (`ExportRun`, one thread per export): decodes, uploads,
   renders (`Engine::render_pixels`, strip by strip), encodes and writes each
   photo. Display-stage renders are serialized by a lock: their uniforms are shared.
+- **Update** (`UpdateRun`, one thread per check or install): asks GitHub for the
+  latest release at launch; on request downloads, unpacks, validates and swaps
+  the app bundle. The UI thread then saves and relaunches.
 - Each result wakes the UI with `request_repaint`. A decoder panic fails that
   photo only.
 - **Zone detection** (`DetectionRun`, one thread per detection): renders the

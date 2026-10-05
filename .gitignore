@@ -1,4 +1,6 @@
 /target
+# app bundle made by scripts/bundle.sh
+/dist
 **/*.rs.bk
 .DS_Store
 # headless-verify skill: evidence and throwaway harnesses

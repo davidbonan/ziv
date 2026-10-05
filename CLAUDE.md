@@ -21,6 +21,7 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 - `specs/develop.md` — F2: develop panel, base rendering, sidecar, undo, before/after.
 - `specs/curve-and-color.md` — F2: tone curve, color mixer, color grading (M11).
 - `specs/crop-and-straighten.md` — F11: crop frame, aspect ratios, angle, quarter turns, mirror (M12).
+- `specs/update.md` — F12: app bundle, releases, in-app update, release notes (M13).
 - `specs/adr/` — one file per technical decision (`/adr`).
 - `specs/<feature>.md` — product intent per feature (`/spec`).
 
@@ -33,6 +34,7 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 - `/spec <feature>` — frame a feature into `specs/<feature>.md` + task cards in `STATE.md`. No code.
 - `/adr <decision>` — record a technical decision in `specs/adr/`.
 - `/implement-state [task]` — implement exactly one task from `STATE.md` through the DoD.
+- `/release [patch|minor|major|x.y.z]` — publish a version: bump, release notes, tag, CI, published asset checked.
 - `/verify` — quality gate: fmt, clippy `-D warnings`, tests.
 - `/headless-verify [instructions]` — open the real app headless, drive it, PNG + a11y evidence.
 - `image-pipeline` — reference: pipeline invariants, how to add an adjustment. Read before touching `engine`.

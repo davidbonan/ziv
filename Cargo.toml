@@ -24,6 +24,7 @@ eframe = { version = "0.36", default-features = false, features = [
     "wgpu",
 ] }
 egui = "0.36"
+egui_commonmark = { version = "0.25", default-features = false, features = ["pulldown_cmark"] }
 half = { version = "2", features = ["bytemuck"] }
 image = { version = "0.25", default-features = false, features = [
     "jpeg",
