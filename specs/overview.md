@@ -49,6 +49,7 @@ Changed only through a new ADR (`specs/adr/`).
 | Color stages | color mixer in Oklch of the working pixel, after the masks; color grading then tone curve on display-encoded values, after the clamp; curves sampled into a 256-texel lookup; photo only, never on a mask | 0014 |
 | Distribution | GitHub Releases of the public repository, `v<semver>` tags built by CI; `ziv.app` signed ad-hoc, zipped as `ziv-macos.zip`; installed by a `curl` script; `Cargo.toml` is the single version | 0016 |
 | In-app update | check of `releases/latest` and download through `ureq`; `ditto`, `codesign --verify --strict`, rename, `open -n`; release notes embedded in the binary, shown with `egui_commonmark` | 0016 |
+| Source licence | MIT, for ziv's own source | 0017 |
 | Framing | the part of the source a render asks for, a parallelogram; frame in fractions of the picture, angle, one of eight orientations applied last; masks stay in photo units of the picture; trilinear resampling | 0015 |
 
 ## 4. Open decisions
@@ -58,4 +59,3 @@ Each one is settled by an ADR before the milestone that needs it starts.
 |----------|-----------|------|
 | Wide-gamut display output (Display P3), surface tagging on macOS | — | — |
 | ICC profiles: embedded input profiles, export profile | — | — |
-| Licence of ziv's own source | before first release | — |

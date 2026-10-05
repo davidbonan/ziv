@@ -14,8 +14,7 @@
 3. M13.8 — `/release` is written, never run: its first run is M13.9.
 
 ## Blockers
-- M13.9 — the repository is private and ziv's source has no licence
-  (`specs/update.md` §7): both are the author's to settle before a release.
+None.
 
 ---
 
@@ -390,4 +389,4 @@ script, let it find the second, install it from the app and read What's new.
   *Depends*: M13.6. *Tests*: HV.
 - ◐ **M13.8 — `/release` skill.** *Spec*: rule 25. *Depends*: M13.1, M13.5.
   *Tests*: read in review.
-- ⊘ **M13.9 — Demo.** *Spec*: P19. *Depends*: M13.7, M13.8. *Tests*: by hand.
+- ◐ **M13.9 — Demo.** *Spec*: P19. *Depends*: M13.7, M13.8. *Tests*: by hand.

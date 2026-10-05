@@ -43,3 +43,7 @@ A `v<version>` tag matching `Cargo.toml` makes CI
   clothes, eyes and lips (`Xenova/segformer_b2_clothes`, `Xenova/face-parsing`)
   are under non-commercial licences. ziv is given away, never sold.
 - Design and decisions: [`specs/`](specs/overview.md).
+
+## License
+
+[MIT](LICENSE), for ziv's own source.

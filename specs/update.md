@@ -182,8 +182,4 @@ where this spec says otherwise (§2 Out, and ADR 0016 for the network calls).
 | P19 | by hand, once the repository is public | two published releases |
 
 ## 7. Open questions
-- **Licence of ziv's own source** (`overview.md` §4): a public repository
-  without one grants nothing, and `rawler`'s LGPL asks that a user may rebuild
-  ziv with another `rawler`. To settle before the first release (P19).
-- **The repository is still private**: making it public is the author's act,
-  before the first release (P19).
+None: the repository is public and the source is under the MIT licence (ADR 0017).
