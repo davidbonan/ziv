@@ -38,9 +38,16 @@ This file holds the invariants every engine task must respect.
   its `Calibrate` / `SRgb` steps are never used (ADR 0002).
 - `src/engine/infrastructure/` — `Engine` (upload + mipmaps, `render_display`,
   readback), `display_stage.wgsl`; shader constants come from the domain through
-  uniforms. A `DisplayRequest` names the source region, the output size in
-  pixels and the sampling: the viewport renders only what is on screen, at
-  screen resolution.
+  uniforms. A `DisplayRequest` names the source region (a `PictureRegion`: a
+  parallelogram of the picture), the output size in pixels and the sampling:
+  the viewport renders only what is on screen, at screen resolution.
+- `src/develop/domain/framing.rs` — `Framing`: what a photo keeps of its
+  picture. It is not a stage: `Framing::region` says which region a render
+  asks for (ADR 0015) — frame, angle, then its `Turn` (mirror, quarter turns)
+  last; masks stay in photo units of the picture. Zone detection, enhancement
+  and thumbnails ask for the whole source; the viewport, the histogram and
+  the export ask for the framed region. `Framing::share_of_framed_photo` is
+  the way back, from the picture to the framed photo (mask handles on screen).
 - `src/develop/domain/mask.rs` and the shape files beside it — `Mask` = shape +
   `Adjustments` + inverted + hidden; every shape answers `coverage(point)` in
   photo units (pixels ÷ long edge, `photo_extent`). `Development::edited` blends

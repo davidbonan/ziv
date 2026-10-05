@@ -20,6 +20,7 @@ UI `eframe`/`egui`, image engine on `wgpu`, RAW decoding via `rawler`.
 - `specs/import.md` — F1: opening photos, filmstrip, viewport zoom and pan.
 - `specs/develop.md` — F2: develop panel, base rendering, sidecar, undo, before/after.
 - `specs/curve-and-color.md` — F2: tone curve, color mixer, color grading (M11).
+- `specs/crop-and-straighten.md` — F11: crop frame, aspect ratios, angle, quarter turns, mirror (M12).
 - `specs/adr/` — one file per technical decision (`/adr`).
 - `specs/<feature>.md` — product intent per feature (`/spec`).
 

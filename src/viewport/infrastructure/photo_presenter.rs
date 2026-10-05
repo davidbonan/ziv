@@ -4,23 +4,57 @@ use eframe::egui_wgpu::{RenderState, Renderer};
 use egui::mutex::RwLock;
 
 use crate::develop::domain::development::Development;
+use crate::develop::domain::framing::Framing;
 use crate::develop::domain::mask::Mask;
 use crate::engine::infrastructure::display_stage::{DisplayRequest, Sampling};
 use crate::engine::infrastructure::engine::Engine;
 use crate::engine::infrastructure::source_texture::SourceTexture;
+use crate::photo::domain::picture_region::PictureRegion;
 use crate::viewport::domain::view::{ACTUAL_SIZE, Placement};
 
-/// How a photo is shown: developed, and under the veil of a mask when one is
-/// being looked at.
+/// How a photo is shown: developed, framed, and under the veil of a mask when
+/// one is being looked at.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ShownPhoto {
     pub development: Development,
+    pub framing: Framing,
     pub overlaid_mask: Option<Mask>,
 }
 
+impl ShownPhoto {
+    /// `region` of the picture at `size`, whatever the framing.
+    pub fn request_of(&self, region: PictureRegion, size: [u32; 2]) -> DisplayRequest {
+        DisplayRequest {
+            region,
+            development: self.development.clone(),
+            overlaid_mask: self.overlaid_mask.clone(),
+            ..DisplayRequest::whole_source(size)
+        }
+    }
+
+    /// What `placement` shows of the framed photo, `picture` being the size of its picture.
+    pub fn request_at(&self, picture: [u32; 2], placement: &Placement) -> DisplayRequest {
+        let framed = self.framing.framed_size(picture).map(|side| side as f32);
+        let in_shares = |position: [f32; 2]| [0, 1].map(|axis| position[axis] / framed[axis]);
+        let shown = in_shares(placement.photo_size);
+        let region = self.framing.region(picture);
+        // A photo with an angle is resampled: its pixels are not the picture's.
+        let is_magnified_picture = placement.scale > ACTUAL_SIZE && self.framing.angle == 0.0;
+        DisplayRequest {
+            sampling: match is_magnified_picture {
+                true => Sampling::Pixelated,
+                false => Sampling::Smooth,
+            },
+            ..self.request_of(
+                region.part(in_shares(placement.photo_min), shown),
+                placement.screen_size.map(|side| side.ceil() as u32),
+            )
+        }
+    }
+}
+
 struct DisplayOutput {
-    placement: Placement,
-    shown: ShownPhoto,
+    request: DisplayRequest,
     // An enhancement arrives after the photo: what was rendered without it is outdated.
     is_enhanced: bool,
     texture_id: egui::TextureId,
@@ -75,19 +109,11 @@ impl PhotoPresenter {
         }
     }
 
-    /// Renders what `placement` shows of the developed photo, unless its latest
-    /// render already is that.
-    pub fn render_at(
-        &self,
-        photo: &mut PresentedPhoto,
-        placement: &Placement,
-        shown: &ShownPhoto,
-    ) -> egui::TextureId {
+    /// Renders `request` of the photo, unless its latest render already is that.
+    pub fn render(&self, photo: &mut PresentedPhoto, request: DisplayRequest) -> egui::TextureId {
         let is_enhanced = photo.source.is_enhanced();
         let is_latest = |output: &&DisplayOutput| {
-            output.placement == *placement
-                && output.shown == *shown
-                && output.is_enhanced == is_enhanced
+            output.request == request && output.is_enhanced == is_enhanced
         };
         if let Some(output) = photo.output.as_ref().filter(is_latest) {
             return output.texture_id;
@@ -95,10 +121,7 @@ impl PhotoPresenter {
 
         let view = self
             .engine
-            .render_display(
-                &photo.source,
-                &display_request(photo.size(), placement, shown),
-            )
+            .render_display(&photo.source, &request)
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut egui_renderer = self.egui_renderer.write();
         let filter = wgpu::FilterMode::Nearest;
@@ -115,33 +138,10 @@ impl PhotoPresenter {
             None => egui_renderer.register_native_texture(&self.device, &view, filter),
         };
         photo.output = Some(DisplayOutput {
-            placement: *placement,
-            shown: shown.clone(),
+            request,
             is_enhanced,
             texture_id,
         });
         texture_id
-    }
-}
-
-fn display_request(
-    photo_size: [u32; 2],
-    placement: &Placement,
-    shown: &ShownPhoto,
-) -> DisplayRequest {
-    let photo_size = photo_size.map(|side| side as f32);
-    let in_texture_coordinates =
-        |position: [f32; 2]| [0, 1].map(|axis| position[axis] / photo_size[axis]);
-    DisplayRequest {
-        region_min: in_texture_coordinates(placement.photo_min),
-        region_size: in_texture_coordinates(placement.photo_size),
-        size: placement.screen_size.map(|side| side.ceil() as u32),
-        sampling: if placement.scale > ACTUAL_SIZE {
-            Sampling::Pixelated
-        } else {
-            Sampling::Smooth
-        },
-        development: shown.development.clone(),
-        overlaid_mask: shown.overlaid_mask.clone(),
     }
 }

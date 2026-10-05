@@ -12,6 +12,7 @@ use ziv::develop::domain::zone::{Zone, ZoneMask};
 
 use ziv::develop::domain::edit::Edit;
 use ziv::develop::domain::edit_storage::EditStorage;
+use ziv::develop::domain::framing::{Framing, Turn};
 use ziv::develop::infrastructure::sidecar_files::{SidecarFiles, sidecar_path};
 
 fn photo_in(folder: &tempfile::TempDir) -> PathBuf {
@@ -124,4 +125,21 @@ fn folder_that_cannot_be_written_reports_the_failure() {
             .store_edit(&missing_folder, &brighter())
             .is_err()
     );
+}
+
+#[test]
+fn a_photo_whose_only_change_is_its_framing_has_a_stored_edit() {
+    let folder = tempfile::tempdir().unwrap();
+    let photo = photo_in(&folder);
+    let turned = Edit {
+        framing: Framing {
+            turn: Turn::default().turned_right(),
+            ..Framing::default()
+        },
+        ..Edit::default()
+    };
+
+    SidecarFiles.store_edit(&photo, &turned).unwrap();
+
+    assert_eq!(SidecarFiles.stored_edit(&photo), Ok(Some(turned)));
 }

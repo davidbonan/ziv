@@ -2,6 +2,8 @@ pub mod before_badge;
 pub mod color_grading_section;
 pub mod color_mixer_section;
 pub mod color_wheel;
+pub mod crop_canvas;
+pub mod crop_section;
 pub mod develop_panel;
 pub mod mask_canvas;
 pub mod masks_section;

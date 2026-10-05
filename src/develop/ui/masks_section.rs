@@ -55,8 +55,8 @@ const TOOLS: [(MaskKind, &str, Icon); 5] = [
     (MaskKind::Brush, BRUSH_TOOL_LABEL, Icon::Brush),
 ];
 
-const TOOL_SPACING: f32 = 2.0;
-const TOOL_SEPARATOR_HEIGHT: f32 = 14.0;
+pub const TOOL_SPACING: f32 = 1.0;
+const TOOL_SEPARATOR_SIZE: egui::Vec2 = vec2(6.0, 14.0);
 
 /// What the masks of the photo are being worked on with: the mask whose
 /// adjustments the panel shows, or the tool about to draw a new one.
@@ -162,22 +162,18 @@ fn zone_tools(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<DetectionTool
     .inner
 }
 
-fn tool_separator(ui: &mut egui::Ui) {
-    let (area, _) = ui.allocate_exact_size(vec2(space::S, TOOL_SEPARATOR_HEIGHT), Sense::hover());
+pub fn tool_separator(ui: &mut egui::Ui) {
+    let (area, _) = ui.allocate_exact_size(TOOL_SEPARATOR_SIZE, Sense::hover());
     let line = egui::Stroke::new(1.0, color::TRACK);
     ui.painter().vline(area.center().x, area.y_range(), line);
 }
 
-/// The tools that draw a mask, then those that detect one, as one row of icons.
-pub fn mask_tool_bar(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksIntent> {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = TOOL_SPACING;
-        let armed = tools(ui, shown.edit, shown.selection.armed_tool).map(MasksIntent::Arm);
-        tool_separator(ui);
-        let detected = zone_tools(ui, shown).map(MasksIntent::Detect);
-        armed.or(detected)
-    })
-    .inner
+/// The tools that draw a mask, then those that detect one, as icons added to a row.
+pub fn mask_tools(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksIntent> {
+    let armed = tools(ui, shown.edit, shown.selection.armed_tool).map(MasksIntent::Arm);
+    tool_separator(ui);
+    let detected = zone_tools(ui, shown).map(MasksIntent::Detect);
+    armed.or(detected)
 }
 
 struct MaskRow<'a> {

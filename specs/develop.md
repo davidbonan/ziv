@@ -117,11 +117,13 @@ same picture as Lightroom.
 ### Before / after
 25. `B`, or the Before button of the panel, switches the viewport between the
     edited photo and Before; a "Before" badge is shown while Before is on.
+    Amended by `crop-and-straighten.md` rule 34: Before keeps the framing.
 26. Changing an adjustment, or selecting another photo, leaves Before.
 
 ### Copy / paste
 27. `Cmd+Shift+C` copies the selected photo's edit; `Cmd+Shift+V` replaces the
-    selected photo's edit with the copied one.
+    selected photo's edit with the copied one. Amended by
+    `crop-and-straighten.md` rule 38: the framing is not pasted.
 28. Pasting between a RAW and a JPEG / PNG / TIFF leaves white balance as it
     was: their scales are not the same.
 29. Paste does nothing when no edit was copied. The copied edit lasts until the

@@ -1,4 +1,3 @@
-use crate::develop::domain::development::Development;
 use crate::photo::domain::working_image::WorkingImage;
 
 use super::display_readback::{DisplayPixels, read_display_pixels};
@@ -55,23 +54,19 @@ impl Engine {
         self.display_stage.render(source, request)
     }
 
-    /// The whole source developed at `size`, as pixels. Rendered strip by strip
-    /// so that no texture grows with the output.
+    /// What `request` renders, as pixels. Rendered strip by strip so that no
+    /// texture grows with the output.
     pub fn render_pixels(
         &self,
         source: &SourceTexture,
-        development: &Development,
-        size: [u32; 2],
+        request: &DisplayRequest,
     ) -> Result<DisplayPixels, wgpu::BufferAsyncError> {
-        let [width, height] = size;
+        let [width, height] = request.size;
         let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
         for first_row in (0..height).step_by(STRIP_ROWS as usize) {
             let rows = first_row..(first_row + STRIP_ROWS).min(height);
-            let request = DisplayRequest {
-                development: development.clone(),
-                ..DisplayRequest::strip_of_whole_source(size, rows)
-            };
-            let strip = self.read_display_pixels(&self.render_display(source, &request))?;
+            let strip =
+                self.read_display_pixels(&self.render_display(source, &request.strip(rows)))?;
             rgba.extend_from_slice(&strip.rgba);
         }
         Ok(DisplayPixels {

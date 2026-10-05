@@ -5,6 +5,7 @@ pub mod orientation;
 pub mod photo_details;
 pub mod photo_kind;
 pub mod photo_name;
+pub mod picture_region;
 pub mod shooting_data;
 pub mod thumbnail;
 pub mod working_image;

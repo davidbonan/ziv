@@ -3,6 +3,7 @@ use std::ops::RangeInclusive;
 use egui::{Key, Modifiers};
 
 use crate::design::ui::adjustment_slider::{AdjustmentSlider, Track, TrackScale};
+use crate::design::ui::icon_button::{Icon, icon_toggle};
 use crate::design::ui::section::{SectionTitle, section};
 use crate::design::ui::theme::{color, hue, medium, regular, space, type_size};
 use crate::develop::domain::adjustments::{ADJUSTMENT_RANGE, Adjustments, EXPOSURE_RANGE};
@@ -20,8 +21,10 @@ use crate::photo::domain::photo_kind::PhotoKind;
 
 use super::color_grading_section::color_grading_section;
 use super::color_mixer_section::color_mixer_section;
+use super::crop_section::{CropSectionShown, CropTools, RatioAsked, crop_section};
 use super::masks_section::{
-    MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, mask_tool_bar, masks_list,
+    MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, TOOL_SPACING, mask_tools,
+    masks_list, tool_separator,
 };
 use super::tone_curve_section::tone_curve_section;
 
@@ -40,6 +43,7 @@ pub const TONE_CURVE_GROUP_LABEL: &str = "Tone curve";
 pub const COLOR_MIXER_GROUP_LABEL: &str = "Color mixer";
 pub const COLOR_GRADING_GROUP_LABEL: &str = "Color grading";
 pub const DETAIL_GROUP_LABEL: &str = "Detail";
+pub const CROP_TOOL_LABEL: &str = "Crop";
 pub const RESET_LABEL: &str = "Reset";
 pub const COPY_LABEL: &str = "Copy";
 pub const PASTE_LABEL: &str = "Paste";
@@ -164,6 +168,11 @@ pub struct DevelopPanelState {
     pub histogram: Option<Histogram>,
     pub mask_selection: MaskSelection,
     pub is_before_shown: bool,
+    /// In crop mode, what the frame is worked on with: the panel then shows
+    /// the Crop section instead of the photo's.
+    pub crop: Option<CropTools>,
+    /// What the user asked this frame of the proportions of the crop frame.
+    pub ratio_asked: Option<RatioAsked>,
     /// A detection runs: the zone tools wait for it.
     pub is_detecting: bool,
     /// The zone tool the user asked for this frame.
@@ -318,8 +327,8 @@ fn adjusted(ui: &mut egui::Ui, kind: &PhotoKind, adjustments: Adjustments) -> Ad
     }
 }
 
-/// The name of the mask being adjusted and Done. Whether Done was asked.
-fn mask_title(ui: &mut egui::Ui, name: &str) -> bool {
+/// The name of what is being worked on and Done. Whether Done was asked.
+pub(super) fn title_with_done(ui: &mut egui::Ui, name: &str) -> bool {
     let name = egui::RichText::new(name)
         .font(medium(type_size::BODY))
         .color(color::ACCENT);
@@ -368,7 +377,7 @@ fn mask_adjusted(
 ) -> DevelopPanelState {
     let mut state = state;
     let name = state.edit.mask_names().swap_remove(selected);
-    let is_done = mask_title(ui, &name);
+    let is_done = title_with_done(ui, &name);
     let is_overlaid = state.mask_selection.overlaid_mask(&state.edit).is_some();
     let shown = MaskOptions {
         is_inverted: state.edit.masks[selected].is_inverted,
@@ -464,6 +473,50 @@ fn masks_and_adjustments(
     }
 }
 
+fn framing_edited(
+    ui: &mut egui::Ui,
+    state: DevelopPanelState,
+    tools: CropTools,
+) -> DevelopPanelState {
+    let shown = CropSectionShown {
+        framing: state.edit.framing,
+        tools,
+    };
+    let left = crop_section(ui, &shown);
+    let mut state = state;
+    state.edit.framing = left.framing;
+    state.ratio_asked = left.ratio_asked;
+    state.crop = (!left.is_done).then_some(CropTools {
+        is_level_armed: left.is_level_armed,
+        ..tools
+    });
+    state
+}
+
+/// Crop, then the mask tools, which wait while the framing is edited: one row of icons.
+fn tool_bar(ui: &mut egui::Ui, state: DevelopPanelState) -> DevelopPanelState {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = TOOL_SPACING;
+        let is_cropping = state.crop.is_some();
+        let is_crop_asked = icon_toggle(ui, Icon::Crop, CROP_TOOL_LABEL, is_cropping).clicked();
+        tool_separator(ui);
+        let intent = ui
+            .add_enabled_ui(!is_cropping, |ui| mask_tools(ui, &state.masks_shown()))
+            .inner;
+        let crop = match (is_crop_asked, state.crop) {
+            (false, crop) => crop,
+            (true, None) => Some(CropTools::default()),
+            (true, Some(_)) => None,
+        };
+        let state = DevelopPanelState { crop, ..state };
+        match intent {
+            Some(intent) => state.after(intent),
+            None => state,
+        }
+    })
+    .inner
+}
+
 /// `Esc` leaves the armed tool or the selected mask, `Delete` removes the
 /// selected mask, `O` shows or hides its overlay. A typed value keeps its keys.
 fn after_mask_keys(ui: &egui::Ui, state: DevelopPanelState) -> DevelopPanelState {
@@ -503,22 +556,26 @@ pub fn develop_panel(
     if foot.is_reset_asked {
         return DevelopPanelState {
             can_paste: state.can_paste,
+            crop: state.crop,
             ..DevelopPanelState::default()
         };
     }
     let shown = (state.edit.clone(), state.is_before_shown);
-    let state = after_mask_keys(ui, state);
-    let state = match mask_tool_bar(ui, &state.masks_shown()) {
-        Some(intent) => state.after(intent),
-        None => state,
+    let state = match state.crop {
+        Some(_) => state,
+        None => after_mask_keys(ui, state),
     };
+    let state = tool_bar(ui, state);
     // Room kept for the scroll bar whether it shows or not: folding a section moves no value.
     let width_beside_scroll_bar = ui.available_width() - ui.spacing().scroll.bar_width;
     let left = egui::ScrollArea::vertical()
         .auto_shrink(false)
         .show(ui, |ui| {
             ui.set_max_width(width_beside_scroll_bar);
-            masks_and_adjustments(ui, kind, state)
+            match state.crop {
+                Some(tools) => framing_edited(ui, state, tools),
+                None => masks_and_adjustments(ui, kind, state),
+            }
         })
         .inner;
     let (shown_edit, was_before_shown) = shown;

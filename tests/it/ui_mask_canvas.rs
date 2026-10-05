@@ -1,6 +1,7 @@
 use egui::{Key, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use ziv::develop::domain::brush::{Brush, Stroke};
+use ziv::develop::domain::framing::{CropFrame, Framing, Turn};
 use ziv::develop::domain::linear_gradient::LinearGradient;
 use ziv::develop::domain::mask::{Mask, MaskKind, MaskShape, PhotoPoint};
 use ziv::develop::ui::mask_canvas::{MaskCanvasState, PhotoOnScreen, mask_canvas};
@@ -15,10 +16,7 @@ fn canvas(state: MaskCanvasState) -> Harness<'static, MaskCanvasState> {
         .build_ui_state(
             |ui, state: &mut MaskCanvasState| {
                 let whole = Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, HEIGHT));
-                let photo = PhotoOnScreen {
-                    area: whole,
-                    whole_photo: whole,
-                };
+                let photo = PhotoOnScreen::upright(whole, whole);
                 *state = mask_canvas(ui, &photo, state.clone());
             },
             state,
@@ -314,4 +312,42 @@ fn bracket_keys_change_the_size_of_the_brush() {
     harness.key_press(Key::OpenBracket);
     harness.run();
     assert_eq!(harness.state().selection.brush.size, 18.0);
+}
+
+/// The right half of a 400 × 300 picture, turned right: 300 × 200 on screen.
+fn canvas_on_the_right_half_turned_right(
+    state: MaskCanvasState,
+) -> Harness<'static, MaskCanvasState> {
+    let mut harness = Harness::builder()
+        .with_size(vec2(WIDTH, HEIGHT))
+        .build_ui_state(
+            |ui, state: &mut MaskCanvasState| {
+                let area = Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, HEIGHT));
+                let framed_photo = Rect::from_min_size(Pos2::ZERO, vec2(300.0, 200.0));
+                let framing = Framing {
+                    frame: CropFrame {
+                        centre: [0.75, 0.5],
+                        size: [0.5, 1.0],
+                    },
+                    turn: Turn::default().turned_right(),
+                    ..Framing::default()
+                };
+                let photo = PhotoOnScreen::framed(area, framed_photo, (&framing, [400, 300]));
+                *state = mask_canvas(ui, &photo, state.clone());
+            },
+            state,
+        );
+    harness.run();
+    harness
+}
+
+#[test]
+fn a_gradient_drawn_on_a_framed_and_turned_photo_lands_on_the_picture_under_the_pointer() {
+    let mut harness = canvas_on_the_right_half_turned_right(armed());
+
+    drag(&mut harness, pos2(300.0, 0.0), pos2(150.0, 200.0));
+
+    let drawn = only_gradient(&harness);
+    assert_near(drawn.full, [0.5, 0.0]);
+    assert_near(drawn.none, [1.0, 0.375]);
 }

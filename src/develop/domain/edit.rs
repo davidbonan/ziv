@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::adjustments::Adjustments;
 use super::color_grading::ColorGrading;
 use super::color_mixer::ColorMixer;
+use super::framing::Framing;
 use super::mask::{CoverageSource, Mask, MaskShape};
 use super::tone_curve::ToneCurves;
 
@@ -22,6 +23,7 @@ pub struct Edit {
     pub tone_curves: ToneCurves,
     pub color_mixer: ColorMixer,
     pub color_grading: ColorGrading,
+    pub framing: Framing,
 }
 
 pub const FULL_INTENSITY: f32 = 100.0;

@@ -7,13 +7,17 @@ use crate::design::ui::floating_pill::PILL_STACKING_STEP;
 use crate::design::ui::notice::{Notice, notice_toast};
 use crate::design::ui::theme::{apply_theme, color, space};
 use crate::develop::application::session_edits::{SaveFailure, SessionEdits};
+use crate::develop::domain::aspect_ratio::RatioLock;
 use crate::develop::domain::copied_edit::CopiedEdit;
 use crate::develop::domain::development::Development;
 use crate::develop::domain::edit::{Edit, FULL_INTENSITY};
+use crate::develop::domain::framing::Framing;
 use crate::develop::domain::mask::{Mask, MaskShape};
 use crate::develop::domain::zone::ZoneMask;
 use crate::develop::infrastructure::sidecar_files::{SidecarFiles, has_sidecar, sidecar_path};
 use crate::develop::ui::before_badge::before_badge;
+use crate::develop::ui::crop_canvas::{CropCanvasShown, crop_canvas};
+use crate::develop::ui::crop_section::{CropTools, RatioAsked};
 use crate::develop::ui::develop_panel::{
     DevelopPanelState, develop_panel, edits_left_alone_warning,
 };
@@ -34,7 +38,7 @@ use crate::export::infrastructure::destination_picker::pick_destination;
 use crate::export::infrastructure::photo_export::export_photo;
 use crate::export::ui::export_dialog::{ExportDialogIntent, export_dialog};
 use crate::export::ui::export_progress::{export_progress, export_summary};
-use crate::histogram::infrastructure::developed_histogram::DevelopedHistogram;
+use crate::histogram::infrastructure::developed_histogram::{CountedPhoto, DevelopedHistogram};
 use crate::histogram::ui::histogram_plot::histogram_plot;
 use crate::library::application::photo_trashing::trash_photos;
 use crate::library::application::stored_catalog::StoredCatalog;
@@ -131,6 +135,13 @@ const EXPORT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMA
 const EXPORT_SESSION_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::E);
 const BEFORE_KEY: Key = Key::B;
+const CROP_KEY: Key = Key::R;
+// In crop mode this key is the frame's, not the rejected mark's.
+const SWAP_FRAME_SIDES_KEY: Key = Key::X;
+const ROTATE_LEFT_SHORTCUT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND, Key::OpenBracket);
+const ROTATE_RIGHT_SHORTCUT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND, Key::CloseBracket);
 const COPY_EDIT_SHORTCUT: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C);
 const PASTE_EDIT_SHORTCUT: KeyboardShortcut =
@@ -154,6 +165,13 @@ enum ViewedPhoto {
         path: PathBuf,
         error: DecodeError,
     },
+}
+
+/// Crop mode on the viewed photo.
+struct CropSession {
+    /// The framing the photo had when crop mode was entered.
+    framing_at_entry: Framing,
+    tools: CropTools,
 }
 
 /// A detection asked on the viewed photo; viewing another photo abandons it.
@@ -258,6 +276,9 @@ pub struct ZivApp {
     notice: Option<Notice>,
     /// The viewport shows the selected photo without its edit.
     is_before_shown: bool,
+    crop: Option<CropSession>,
+    /// The framing the angle is being changed from, while a gesture changes it.
+    straightened_from: Option<Framing>,
     mask_selection: MaskSelection,
     copied_edit: Option<CopiedEdit>,
     engine: Arc<Engine>,
@@ -415,6 +436,8 @@ impl ZivApp {
             edits: SessionEdits::new(SidecarFiles),
             notice: None,
             is_before_shown: false,
+            crop: None,
+            straightened_from: None,
             mask_selection: MaskSelection::default(),
             copied_edit: None,
         };
@@ -552,6 +575,7 @@ impl ZivApp {
 
     fn view_selected_photo(&mut self) {
         self.keep_viewed_photo_ahead();
+        self.crop = None;
         let Some(path) = self.catalog.current().selected_photo() else {
             self.ahead.want(Vec::new());
             self.viewed = ViewedPhoto::None;
@@ -1048,11 +1072,172 @@ impl ZivApp {
 
     fn toggle_before_on_its_key(&mut self, ui: &egui::Ui) {
         let is_typing = ui.ctx().text_edit_focused();
-        if self.mode != WindowMode::Develop {
+        if self.mode != WindowMode::Develop || self.is_cropping() {
             return;
         }
         if !is_typing && ui.input_mut(|input| input.consume_key(Modifiers::NONE, BEFORE_KEY)) {
             self.is_before_shown = !self.is_before_shown;
+        }
+    }
+
+    fn is_cropping(&self) -> bool {
+        self.crop.is_some()
+    }
+
+    fn can_crop(&self) -> bool {
+        self.mode == WindowMode::Develop
+            && matches!(self.viewed, ViewedPhoto::Ready { .. })
+            && self.edits_left_alone_reason().is_none()
+    }
+
+    fn enter_crop_mode(&mut self) {
+        let ViewedPhoto::Ready { photo, .. } = &self.viewed else {
+            return;
+        };
+        if !self.can_crop() {
+            return;
+        }
+        let framing = self.selected_edit().framing;
+        self.crop = Some(CropSession {
+            framing_at_entry: framing,
+            tools: CropTools {
+                ratio: RatioLock::on_frame(&framing, photo.size()),
+                is_level_armed: false,
+            },
+        });
+        self.is_before_shown = false;
+        self.mask_selection = self.mask_selection.selecting(None);
+    }
+
+    /// Leaves crop mode keeping the framing; the framed photo is shown at fit.
+    fn leave_crop_mode(&mut self) {
+        self.crop = None;
+        if let ViewedPhoto::Ready { view, .. } = &mut self.viewed {
+            *view = View::fit();
+        }
+    }
+
+    /// Leaves crop mode with the framing the photo had when it was entered.
+    fn cancel_crop(&mut self) {
+        let Some(CropSession {
+            framing_at_entry, ..
+        }) = self.crop
+        else {
+            return;
+        };
+        self.set_framing(framing_at_entry);
+        self.leave_crop_mode();
+    }
+
+    /// `Esc` gives up the level tool when it is armed, else the framing.
+    fn disarm_level_or_cancel_crop(&mut self) {
+        match &mut self.crop {
+            Some(crop) if crop.tools.is_level_armed => crop.tools.is_level_armed = false,
+            _ => self.cancel_crop(),
+        }
+    }
+
+    fn set_framing(&mut self, framing: Framing) {
+        self.set_selected_edit(Edit {
+            framing,
+            ..self.selected_edit()
+        });
+    }
+
+    /// Gives the crop frame the proportions asked for, or lets them go.
+    fn hold_ratio(&mut self, asked: RatioAsked) {
+        let ViewedPhoto::Ready { photo, .. } = &self.viewed else {
+            return;
+        };
+        let picture = photo.size();
+        let framing = self.selected_edit().framing;
+        let (ratio, framed) = match asked {
+            RatioAsked::Free => (RatioLock::Free, framing),
+            RatioAsked::OfFrame => (RatioLock::on_frame(&framing, picture), framing),
+            RatioAsked::Named(named) => (
+                RatioLock::Named(named),
+                framing.with_ratio(picture, named.long_over_short(picture)),
+            ),
+        };
+        if let Some(crop) = &mut self.crop {
+            crop.tools.ratio = ratio;
+        }
+        self.set_framing(framed);
+    }
+
+    /// Turns the crop frame from landscape to portrait or back.
+    fn swap_frame_sides(&mut self) {
+        if let ViewedPhoto::Ready { photo, .. } = &self.viewed {
+            let swapped = self
+                .selected_edit()
+                .framing
+                .with_sides_swapped(photo.size());
+            self.set_framing(swapped);
+        }
+    }
+
+    /// `edit` with its frame held in the picture when only its angle was
+    /// changed: the frame is the one the gesture started with, shrunk for that angle.
+    fn with_frame_held_in_picture(&mut self, edit: Edit) -> Edit {
+        let current = self.selected_edit().framing;
+        let ViewedPhoto::Ready { photo, .. } = &self.viewed else {
+            return edit;
+        };
+        if edit.framing.angle == current.angle || edit.framing.frame != current.frame {
+            return edit;
+        }
+        let from = *self.straightened_from.get_or_insert(current);
+        Edit {
+            framing: from.straightened(photo.size(), edit.framing.angle),
+            ..edit
+        }
+    }
+
+    /// `Cmd+[` and `Cmd+]` turn the photo by a quarter turn, in crop mode or not.
+    fn turn_photo_on_shortcut(&mut self, ui: &egui::Ui) {
+        if !self.can_crop() {
+            return;
+        }
+        let framing = self.selected_edit().framing;
+        let turn = if ui.input_mut(|input| input.consume_shortcut(&ROTATE_LEFT_SHORTCUT)) {
+            framing.turn.turned_left()
+        } else if ui.input_mut(|input| input.consume_shortcut(&ROTATE_RIGHT_SHORTCUT)) {
+            framing.turn.turned_right()
+        } else {
+            return;
+        };
+        self.set_framing(Framing { turn, ..framing });
+    }
+
+    fn set_cropping(&mut self, is_cropping: bool) {
+        match (self.is_cropping(), is_cropping) {
+            (false, true) => self.enter_crop_mode(),
+            (true, false) => self.leave_crop_mode(),
+            _ => {}
+        }
+    }
+
+    /// `R` enters crop mode and leaves it, as `Enter` does; `Esc` gives the framing up.
+    fn crop_on_its_keys(&mut self, ui: &egui::Ui) {
+        if !ui.input(|input| input.pointer.any_down()) {
+            self.straightened_from = None;
+        }
+        if ui.ctx().text_edit_focused() {
+            return;
+        }
+        let is_pressed = |key| ui.input_mut(|input| input.consume_key(Modifiers::NONE, key));
+        if is_pressed(CROP_KEY) {
+            return self.set_cropping(!self.is_cropping());
+        }
+        if !self.is_cropping() {
+            return;
+        }
+        if is_pressed(Key::Enter) {
+            self.leave_crop_mode();
+        } else if is_pressed(Key::Escape) {
+            self.disarm_level_or_cancel_crop();
+        } else if is_pressed(SWAP_FRAME_SIDES_KEY) {
+            self.swap_frame_sides();
         }
     }
 
@@ -1166,6 +1351,7 @@ impl ZivApp {
     fn can_masks_be_drawn(&self) -> bool {
         self.mode == WindowMode::Develop
             && !self.is_before_shown
+            && !self.is_cropping()
             && self.people_pick.is_none()
             && self.photos_to_export.is_none()
             && self.edits_left_alone_reason().is_none()
@@ -1263,7 +1449,7 @@ impl ZivApp {
         let Some(pick) = &self.people_pick else {
             return;
         };
-        person_outlines(ui, (photo.area, photo.whole_photo), pick);
+        person_outlines(ui, photo.area, |share| photo.share_on_screen(share), pick);
         let left = people_picker(ui, photo.area, pick);
         self.people_pick = Some(left.pick);
         match left.intent {
@@ -1416,6 +1602,8 @@ impl ZivApp {
                     histogram: histogram.cloned(),
                     mask_selection: self.mask_selection,
                     is_before_shown: self.is_before_shown,
+                    crop: self.crop.as_ref().map(|crop| crop.tools),
+                    ratio_asked: None,
                     is_detecting: self.zone_detection.is_some() || self.people_pick.is_some(),
                     asked_detection: None,
                     is_enhanced: self.is_viewed_photo_enhanced(),
@@ -1432,10 +1620,20 @@ impl ZivApp {
                 left
             })
             .inner;
+        let mut left = left;
         if ready_kind.is_some() {
+            left.edit = self.with_frame_held_in_picture(left.edit);
             self.set_selected_edit(left.edit.clone());
             self.mask_selection = left.mask_selection;
             self.is_before_shown = left.is_before_shown;
+            self.set_cropping(left.crop.is_some());
+            if let (Some(crop), Some(tools)) = (&mut self.crop, left.crop) {
+                crop.tools.is_level_armed = tools.is_level_armed;
+            }
+            if let Some(asked) = left.ratio_asked {
+                self.hold_ratio(asked);
+                left.edit.framing = self.selected_edit().framing;
+            }
         }
         if let Some(tool) = left.asked_detection {
             self.start_detection(tool.into());
@@ -1456,10 +1654,12 @@ impl ZivApp {
             };
             return ShownPhoto {
                 development,
+                framing: left.edit.framing,
                 overlaid_mask: None,
             };
         }
         ShownPhoto {
+            framing: left.edit.framing,
             overlaid_mask: left.mask_selection.overlaid_mask(&left.edit).cloned(),
             development: Development {
                 kind,
@@ -1478,7 +1678,7 @@ impl ZivApp {
                 kind: *kind,
                 edit: Edit::default(),
             },
-            overlaid_mask: None,
+            ..ShownPhoto::default()
         }
     }
 
@@ -1490,7 +1690,11 @@ impl ZivApp {
         else {
             return;
         };
-        if histogram.follow(&self.engine, photo.source(), &shown.development) {
+        let counted = CountedPhoto {
+            development: shown.development.clone(),
+            framing: shown.framing,
+        };
+        if histogram.follow(&self.engine, photo.source(), &counted) {
             self.egui_context.request_repaint();
         }
     }
@@ -1536,6 +1740,7 @@ impl ZivApp {
             zoom_readout: self.zoom_readout.as_deref(),
             is_before_shown: self.is_before_shown,
             can_before_be_shown: self.mode == WindowMode::Develop
+                && !self.is_cropping()
                 && matches!(self.viewed, ViewedPhoto::Ready { .. }),
             can_export: catalog.selected_photo().is_some(),
         };
@@ -1661,6 +1866,8 @@ impl eframe::App for ZivApp {
         let is_dialog_open = self.photos_to_export.is_some() || self.photos_to_trash.is_some();
         if !is_dialog_open {
             self.undo_or_redo(ui);
+            self.crop_on_its_keys(ui);
+            self.turn_photo_on_shortcut(ui);
             self.toggle_before_on_its_key(ui);
             self.copy_or_paste_edit_on_shortcut(ui);
             self.ask_to_export_on_shortcut(ui);
@@ -1705,6 +1912,9 @@ impl eframe::App for ZivApp {
         };
         let mut zoom_shown = None;
         let mut masks_on_screen = None;
+        let mut cropped = None;
+        let is_cropping = self.is_cropping();
+        let crop_tools = self.crop.as_ref().map(|crop| crop.tools);
         let canvas = egui::Frame::new().fill(color::CANVAS);
         egui::CentralPanel::default().frame(canvas).show(ui, |ui| {
             self.notice_over(ui);
@@ -1718,16 +1928,31 @@ impl eframe::App for ZivApp {
                 }
                 ViewedPhoto::None => {}
                 ViewedPhoto::Loading(path) => photo_loading(ui, path),
+                ViewedPhoto::Ready { photo, .. } if is_cropping => {
+                    let picture = photo.size();
+                    let whole_picture =
+                        |region, size| self.presenter.render(photo, shown.request_of(region, size));
+                    let canvas = CropCanvasShown {
+                        picture,
+                        framing: shown.framing,
+                        tools: crop_tools.unwrap_or_default(),
+                    };
+                    cropped = Some(crop_canvas(ui, &canvas, whole_picture));
+                }
                 ViewedPhoto::Ready { photo, view, .. } => {
-                    let output = photo_viewport(ui, photo.size(), *view, |placement| {
-                        self.presenter.render_at(photo, placement, &shown)
+                    let picture = photo.size();
+                    let framed = shown.framing.framed_size(picture);
+                    let output = photo_viewport(ui, framed, *view, |placement| {
+                        self.presenter
+                            .render(photo, shown.request_at(picture, placement))
                     });
                     *view = output.view;
                     zoom_shown = Some(zoom_readout(&output.view, output.scale));
-                    masks_on_screen = is_developing.then_some(PhotoOnScreen {
-                        area: ui.max_rect(),
-                        whole_photo: output.whole_photo_rect,
-                    });
+                    masks_on_screen = is_developing.then_some(PhotoOnScreen::framed(
+                        ui.max_rect(),
+                        output.whole_photo_rect,
+                        (&shown.framing, picture),
+                    ));
                     if self.is_before_shown {
                         before_badge(ui, ui.max_rect());
                     }
@@ -1741,6 +1966,18 @@ impl eframe::App for ZivApp {
                 self.pick_people(ui, photo);
             }
         });
+        if let Some(cropped) = cropped {
+            self.set_selected_edit(Edit {
+                framing: cropped.framing,
+                ..self.selected_edit()
+            });
+            if let Some(crop) = self.crop.as_mut().filter(|_| cropped.is_level_drawn) {
+                crop.tools.is_level_armed = false;
+            }
+            if cropped.is_done {
+                self.leave_crop_mode();
+            }
+        }
 
         self.zoom_readout = zoom_shown;
         self.export_dialog_window(ui);

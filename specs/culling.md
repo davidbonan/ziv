@@ -120,6 +120,7 @@ then develop only the ones worth it.
     photo details does the same.
 25. `X` rejects every photo of the selection; when all of them are already
     rejected it clears the mark instead. A rejected photo keeps its rating.
+    Amended by `crop-and-straighten.md` rule 17: not in crop mode.
 26. Marks work in both modes. The thumbnails of the filmstrip show the rating
     and the rejected mark as the cells of the grid do.
 27. A mark never moves the selection.

@@ -18,6 +18,7 @@ imported series again at the next launch.
 | F9 | Histogram and shooting data — at the top of the develop panel | [`histogram.md`](histogram.md) |
 | F7 | Series catalog — imports kept as series in a sidebar, work resumed at the next launch | [`catalog.md`](catalog.md) |
 | F10 | Culling — grid and fast preview, ratings, rejected mark, series filter, removal and Trash | [`culling.md`](culling.md) |
+| F11 | Crop and straighten — crop frame, aspect ratios, angle, quarter turns, mirror | [`crop-and-straighten.md`](crop-and-straighten.md) |
 
 A feature has no spec until `/spec` writes `specs/<feature>.md`.
 
@@ -45,6 +46,7 @@ Changed only through a new ADR (`specs/adr/`).
 | Enhancement | DRUNet colour on the GPU (Core ML) in 512² tiles on the working image, told the photo's noise level; result kept beside the photo as a lossless difference; mixed by intensity in the display stage | 0008, 0009, 0010 |
 | Masks | photo-unit geometry; gradients and shapes analytic in the display stage, brush rasterized from strokes; 16 masks per photo | 0005 |
 | Color stages | color mixer in Oklch of the working pixel, after the masks; color grading then tone curve on display-encoded values, after the clamp; curves sampled into a 256-texel lookup; photo only, never on a mask | 0014 |
+| Framing | the part of the source a render asks for, a parallelogram; frame in fractions of the picture, angle, one of eight orientations applied last; masks stay in photo units of the picture; trilinear resampling | 0015 |
 
 ## 4. Open decisions
 Each one is settled by an ADR before the milestone that needs it starts.

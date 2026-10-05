@@ -8,7 +8,7 @@
    place of the grid separator (K6) survive a relaunch: both ride on `eframe`
    storage, which a headless run does not have. Everything else of M10 is
    verified.
-2. M11 is done. No milestone is framed after it: `/spec` the next one.
+2. No milestone framed after M12: `/spec` the next feature.
 
 ## Blockers
 None.
@@ -324,3 +324,35 @@ and orange highlights; quit, relaunch and find the edit again; export.
   M11.5, M11.8. *Tests*: U, G, Eb, Eu.
 - ☑ **M11.10 — Demo.** *Spec*: rule 37 · T19. *Depends*: M11.3, M11.9.
   *Tests*: HV.
+
+## ☑ M12 — Crop and straighten · 8/8
+Reframe a photo: crop frame, aspect ratios, angle, quarter turns, mirror.
+Feature F11. *Spec*: `specs/crop-and-straighten.md` (ADR 0015). *Demo*: on the A7 IV RAW,
+level the horizon with the level tool, crop to 4 : 5 portrait, turn a photo
+shot sideways, draw a gradient on the framed photo; quit, relaunch and find
+the framing again; export the framed file.
+
+- ☑ **M12.1 — Crop frame end to end.** Framing in the edit, the engine
+  rendering the framed photo, the viewport on it; crop mode with its button
+  and `R`, the frame with handles, dimmed outside and thirds, free resize and
+  move, Done and `Esc`. *Spec*: `specs/crop-and-straighten.md` rules 1–13,
+  25, 26 · F1–F5, F13. *Tests*: U, G, Eu, HV.
+- ☑ **M12.2 — Aspect ratios.** Ratio selector, lock, Custom, `X`. *Spec*:
+  rules 14–17 · F6, F7. *Depends*: M12.1. *Tests*: U, Eu.
+- ☑ **M12.3 — Straighten angle.** Angle in the edit and the engine, the
+  slider, the drag outside the frame, the frame held inside the picture.
+  *Spec*: rules 18–20, 31 · F8, F9, F10. *Depends*: M12.1. *Tests*: U, G, Eu.
+- ☑ **M12.4 — Level tool.** *Spec*: rule 21 · F11. *Depends*: M12.3.
+  *Tests*: U, Eu.
+- ☑ **M12.5 — Quarter turns and mirror.** In the edit and the engine, the
+  four buttons, `Cmd+[` and `Cmd+]`; frame, angle and masks carried along.
+  *Spec*: rules 22–24 · F12. *Depends*: M12.3. *Tests*: U, G, Eu.
+- ☑ **M12.6 — Masks, zones and enhancement under a framing.** Masks kept on
+  the picture and drawn on the framed photo; zone detection and enhancement on
+  the whole picture. *Spec*: rules 27–29 · F14, F15. *Depends*: M12.5.
+  *Tests*: U, G, Eb.
+- ☑ **M12.7 — Framing with the rest of the app.** Sidecar version, edited
+  marker, undo and redo, Before, Reset crop, Reset, paste, histogram, export.
+  *Spec*: rules 30, 32–39 · F16–F19. *Depends*: M12.5. *Tests*: U, Eb, Eu.
+- ☑ **M12.8 — Demo.** *Spec*: rule 40 · F20. *Depends*: M12.2, M12.4, M12.6,
+  M12.7. *Tests*: HV.

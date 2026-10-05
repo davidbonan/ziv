@@ -4,6 +4,7 @@ use ziv::develop::domain::adjustments::Adjustments;
 
 use ziv::develop::domain::edit::Edit;
 use ziv::develop::domain::edit_storage::EditStorage;
+use ziv::develop::domain::framing::{CropFrame, Framing, Turn};
 use ziv::develop::infrastructure::sidecar_files::SidecarFiles;
 use ziv::enhance::domain::enhancement::Enhancement;
 use ziv::enhance::domain::enhancement_storage::EnhancementStorage;
@@ -223,4 +224,68 @@ fn photo_that_cannot_be_decoded_exports_nothing() {
 
     assert!(result.is_err());
     assert!(shoot.exported_names().is_empty());
+}
+
+/// The right half of the picture, turned right.
+fn right_half_turned_right() -> Edit {
+    Edit {
+        framing: Framing {
+            frame: CropFrame {
+                centre: [0.75, 0.5],
+                size: [0.5, 1.0],
+            },
+            turn: Turn::default().turned_right(),
+            ..Framing::default()
+        },
+        ..Edit::default()
+    }
+}
+
+#[test]
+fn export_of_a_framed_photo_is_its_frame_pixel_for_pixel() {
+    let shoot = Shoot::with(&["patches.png"]);
+    let photo = shoot.photo("patches.png");
+    SidecarFiles
+        .store_edit(&photo, &right_half_turned_right())
+        .unwrap();
+
+    let exported = export_photo(
+        &headless_engine(),
+        &photo,
+        &shoot.settings(ExportFormat::Png),
+    )
+    .unwrap();
+
+    let source = image::open(&photo).unwrap().into_rgb8();
+    let (width, height) = source.dimensions();
+    let written = image::open(exported).unwrap().into_rgb8();
+    assert_eq!(written.dimensions(), (height, width / 2));
+    for (x, y, pixel) in written.enumerate_pixels() {
+        let on_picture = source.get_pixel(width / 2 + y, height - 1 - x);
+        let is_same = (0..3).all(|channel| pixel[channel].abs_diff(on_picture[channel]) <= 1);
+        assert!(is_same, "{x}, {y}: {pixel:?} is not {on_picture:?}");
+    }
+}
+
+#[test]
+fn long_edge_export_of_a_framed_photo_scales_its_frame() {
+    let shoot = Shoot::with(&["patches.png"]);
+    let photo = shoot.photo("patches.png");
+    let (width, height) = image::image_dimensions(&photo).unwrap();
+    SidecarFiles
+        .store_edit(&photo, &right_half_turned_right())
+        .unwrap();
+    let framed_long_edge = height.max(width / 2);
+    let settings = ExportSettings {
+        size: ExportSize::LongEdge,
+        long_edge: framed_long_edge / 2,
+        ..shoot.settings(ExportFormat::Png)
+    };
+
+    let exported = export_photo(&headless_engine(), &photo, &settings).unwrap();
+
+    assert_eq!(
+        image::image_dimensions(exported).unwrap(),
+        (height / 2, width / 4)
+    );
 }

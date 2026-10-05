@@ -8,7 +8,8 @@ use super::edit::Edit;
 /// 3: zone masks, which a reader of version 2 cannot read.
 /// 4: enhancement intensity, which a reader of version 3 would drop.
 /// 5: tone curves, color mixer and color grading, which a reader of version 4 would drop.
-pub const CURRENT_VERSION: u32 = 5;
+/// 6: framing, which a reader of version 5 would drop.
+pub const CURRENT_VERSION: u32 = 6;
 
 #[derive(Serialize, Deserialize)]
 struct EditDocument {
@@ -69,6 +70,7 @@ mod tests {
     use crate::develop::domain::color_grading::{ColorGrading, TonalZone, ZoneGrade};
     use crate::develop::domain::color_mixer::{ColorMixer, ColorRange};
     use crate::develop::domain::coverage_image::CoverageImage;
+    use crate::develop::domain::framing::{CropFrame, Framing, Turn};
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::{Mask, MaskShape};
     use crate::develop::domain::polygon::Polygon;
@@ -108,11 +110,11 @@ mod tests {
 
     #[test]
     fn a_document_from_a_newer_ziv_is_refused() {
-        let document = r#"{ "version": 6, "exposure": 1.5 }"#;
+        let document = r#"{ "version": 7, "exposure": 1.5 }"#;
 
         assert_eq!(
             edit_of_document(document),
-            Err(DocumentError::FromNewerZiv { version: 6 })
+            Err(DocumentError::FromNewerZiv { version: 7 })
         );
     }
 
@@ -177,7 +179,7 @@ mod tests {
 
         let document = edit_document(&edit);
 
-        assert!(document.contains(r#""version": 5"#));
+        assert!(document.contains(r#""version": 6"#));
         assert_eq!(edit_of_document(&document), Ok(edit));
     }
 
@@ -267,5 +269,32 @@ mod tests {
                 Err(DocumentError::NotAnEditDocument(_))
             ));
         }
+    }
+
+    #[test]
+    fn a_framing_is_read_back_as_it_was_written() {
+        let framed = Edit {
+            framing: Framing {
+                frame: CropFrame {
+                    centre: [0.4, 0.6],
+                    size: [0.5, 0.25],
+                },
+                angle: -3.5,
+                turn: Turn::default().turned_right().flipped_vertically(),
+            },
+            ..edited()
+        };
+
+        assert_eq!(edit_of_document(&edit_document(&framed)), Ok(framed));
+    }
+
+    #[test]
+    fn a_document_written_before_framing_has_the_default_one() {
+        let document = r#"{ "version": 5, "exposure": 1.5 }"#;
+
+        let edit = edit_of_document(document).unwrap();
+
+        assert_eq!(edit.framing, Framing::default());
+        assert_eq!(edit.adjustments.exposure, 1.5);
     }
 }

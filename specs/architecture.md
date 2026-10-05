@@ -34,7 +34,7 @@ src/shell/domain/                WindowMode: Cull or Develop
 src/shell/ui/                    top bar: sidebar button, series and photo names, mode switch, zoom readout, Before, Export…
 src/color/domain/                primaries, matrices, sRGB transfer, working space, Oklab, Illuminant
 src/photo/application/           PhotoLoader (worker thread), PhotosAhead (photos loaded before they are asked for)
-src/photo/domain/                WorkingImage, DecodedPhoto, PhotoKind, ShootingData, PhotoDetails (pixel size, ShotAt, file size), Thumbnail, Orientation, CameraCalibration, DecodeError
+src/photo/domain/                PictureRegion (the parallelogram of a picture a render shows), WorkingImage, DecodedPhoto, PhotoKind, ShootingData, PhotoDetails (pixel size, ShotAt, file size), Thumbnail, Orientation, CameraCalibration, DecodeError
 src/photo/infrastructure/        file decoders: standard images (`image`), RAW (`rawler`), the picture a RAW embeds as its preview; shooting data from EXIF (`rawler`);
                                  ThumbnailCache (JPEG files in the cache folder)
 src/photo/ui/                    shooting data line, photo details lines
@@ -46,9 +46,11 @@ src/develop/infrastructure/      SidecarFiles: one JSON file next to each edited
 src/develop/domain/              Edit (Adjustments + masks + tone curves + color mixer + color grading), EditHistory, CopiedEdit, WhiteBalance, Tone, Presence, BaseRendering, Development;
                                  ToneCurve (points, monotone interpolation, lookup), one per CurveChannel;
                                  ColorMixer (Hue, Saturation, Luminance per ColorRange); ColorGrading (a ZoneGrade per TonalZone, Blending, Balance);
+                                 Framing (CropFrame and its handles, angle, Turn: mirror and quarter turns), NamedRatio and RatioLock, CropView (the whole picture laid out in crop mode);
                                  Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay
 src/develop/ui/                  develop panel (tool bar, folding sections, foot), mask tool bar and masks list,
-                                 mask canvas (drawing and handles over the photo), tone curve section (channel selector, graph, Reset curve),
+                                 mask canvas (drawing and handles over the photo),
+                                 crop canvas (the whole picture, its crop frame and handles, level line), Crop section (ratios, angle, turns, Reset crop), tone curve section (channel selector, graph, Reset curve),
                                  color mixer section (adjustment selector, eight sliders with color tracks),
                                  color wheel, color grading section (3-way and zone views, Blending, Balance), Before badge
 src/export/domain/               ExportSettings: format, size, destination, file naming

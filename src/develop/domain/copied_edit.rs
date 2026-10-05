@@ -19,10 +19,12 @@ impl CopiedEdit {
         }
     }
 
-    /// The edit a photo gets from Paste. White balance does not cross between
-    /// a RAW and a standard image: their scales are not the same.
+    /// The edit a photo gets from Paste. It keeps its own framing. White
+    /// balance does not cross between a RAW and a standard image: their
+    /// scales are not the same.
     pub fn pasted_onto(&self, current: &Edit, target: &PhotoKind) -> Edit {
         let mut pasted = self.edit.clone();
+        pasted.framing = current.framing;
         if discriminant(&self.source) != discriminant(target) {
             pasted.adjustments.white_balance = current.adjustments.white_balance;
         }
@@ -37,6 +39,7 @@ mod tests {
     use crate::develop::domain::adjustments::Adjustments;
     use crate::develop::domain::color_grading::{ColorGrading, TonalZone, ZoneGrade};
     use crate::develop::domain::color_mixer::{ColorMixer, ColorRange};
+    use crate::develop::domain::framing::Framing;
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::{Mask, MaskShape};
     use crate::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
@@ -138,5 +141,26 @@ mod tests {
         let pasted = copied.pasted_onto(&relative_edit(), &PhotoKind::StandardImage);
 
         assert_eq!(pasted.masks, masked.masks);
+    }
+
+    #[test]
+    fn paste_leaves_the_framing_of_the_photo_pasted_onto() {
+        let straightened = |angle: f32| Edit {
+            framing: Framing {
+                angle,
+                ..Framing::default()
+            },
+            ..kelvin_edit()
+        };
+        let copied = CopiedEdit::of(straightened(5.0), &RAW);
+
+        assert_eq!(
+            copied.pasted_onto(&Edit::default(), &OTHER_RAW),
+            kelvin_edit()
+        );
+        assert_eq!(
+            copied.pasted_onto(&straightened(-3.0), &OTHER_RAW),
+            straightened(-3.0)
+        );
     }
 }

@@ -48,7 +48,8 @@ files in a folder chosen once and remembered.
    sidecar; a photo whose sidecar cannot be used is exported without edit.
 10. At full resolution the file has the photo's size. With a long edge, the
     file's long edge is that value and its aspect ratio the photo's; a photo
-    smaller than the long edge is not enlarged.
+    smaller than the long edge is not enlarged. Amended by
+    `crop-and-straighten.md` rule 37: the photo is the framed photo.
 11. The file is named after the photo, with the format's extension:
     `DSC07070.ARW` → `DSC07070.jpg`. If that name exists in the destination a
     number is appended — `DSC07070-1.jpg` — so that nothing is ever overwritten.

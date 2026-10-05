@@ -20,6 +20,7 @@ use crate::develop::domain::radial_gradient::{FEATHER_RANGE, SMALLEST_EXTENT};
 use crate::develop::domain::tone::{
     BLACKS_REACH, DARKEST_LUMINANCE, HIGHLIGHTS_WIDTH_STOPS, SHADOWS_WIDTH_STOPS,
 };
+use crate::photo::domain::picture_region::PictureRegion;
 
 use super::coverage_layers::no_coverage_layer;
 use super::curve_lookup::CurveLookup;
@@ -28,7 +29,7 @@ use super::source_texture::SourceTexture;
 const OKLAB_ROWS: usize = 12;
 const COLOR_MIXER_ROWS: usize = 1 + RANGE_COUNT + OKLAB_ROWS;
 const COLOR_GRADING_ROWS: usize = 6;
-const STAGE_ROWS: usize = 13 + COLOR_MIXER_ROWS + COLOR_GRADING_ROWS;
+const STAGE_ROWS: usize = 14 + COLOR_MIXER_ROWS + COLOR_GRADING_ROWS;
 const ADJUSTMENT_ROWS: usize = 5;
 const CORNER_ROWS: usize = MOST_CORNERS / 2;
 const MASK_ROWS: usize = ADJUSTMENT_ROWS + 3 + CORNER_ROWS;
@@ -49,13 +50,10 @@ pub enum Sampling {
     Pixelated,
 }
 
-/// One render: the source region developed, then encoded for display.
-/// The region is in texture coordinates: `[0, 0]` is the top-left of the source,
-/// `[1, 1]` its bottom-right.
+/// One render: a region of the source developed, then encoded for display.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisplayRequest {
-    pub region_min: [f32; 2],
-    pub region_size: [f32; 2],
+    pub region: PictureRegion,
     pub size: [u32; 2],
     pub sampling: Sampling,
     pub development: Development,
@@ -64,21 +62,21 @@ pub struct DisplayRequest {
 }
 
 impl DisplayRequest {
-    /// The rows `rows` of a render of the whole source at `size`.
-    pub fn strip_of_whole_source(size: [u32; 2], rows: Range<u32>) -> Self {
-        let [width, height] = size;
+    /// The rows `rows` of this render.
+    pub fn strip(&self, rows: Range<u32>) -> Self {
+        let [width, height] = self.size;
+        let first_row = rows.start as f32 / height as f32;
+        let share = rows.len() as f32 / height as f32;
         Self {
-            region_min: [0.0, rows.start as f32 / height as f32],
-            region_size: [1.0, rows.len() as f32 / height as f32],
+            region: self.region.part([0.0, first_row], [1.0, share]),
             size: [width, rows.len() as u32],
-            ..Self::whole_source(size)
+            ..self.clone()
         }
     }
 
     pub fn whole_source(size: [u32; 2]) -> Self {
         Self {
-            region_min: [0.0; 2],
-            region_size: [1.0; 2],
+            region: PictureRegion::WHOLE,
             size,
             sampling: Sampling::Smooth,
             development: Development::default(),
@@ -261,9 +259,13 @@ fn stage_rows(
         srgb_transfer::OFFSET,
         srgb_transfer::GAMMA,
     ];
-    let [region_x, region_y] = request.region_min;
-    let [region_width, region_height] = request.region_size;
-    let region = [region_x, region_y, region_width, region_height];
+    let PictureRegion {
+        origin,
+        across,
+        down,
+    } = request.region;
+    let region_origin = [origin[0], origin[1], 0.0, 0.0];
+    let region_sides = [across[0], across[1], down[0], down[1]];
     let development = &request.development;
     let tone = development.photo_factors().tone;
     let tone_shape = [
@@ -307,7 +309,8 @@ fn stage_rows(
         green,
         blue,
         transfer,
-        region,
+        region_origin,
+        region_sides,
         tone_shape,
         tone_limits,
         luminance,

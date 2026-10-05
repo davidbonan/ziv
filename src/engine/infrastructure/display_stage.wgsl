@@ -36,8 +36,10 @@ struct DisplayStage {
     working_to_display_blue: vec4f,
     // linear slope, linear cutoff, offset, gamma
     transfer: vec4f,
-    // source region to show, in texture coordinates: min.xy, size.zw
-    region: vec4f,
+    // source region to show, in texture coordinates: its top-left corner .xy,
+    region_origin: vec4f,
+    // what its top side .xy and its left side .zw span
+    region_sides: vec4f,
     // middle grey, stops from middle grey to white, highlights width, shadows width (stops)
     tone_shape: vec4f,
     // luminance where blacks stops acting, darkest luminance handled
@@ -93,7 +95,7 @@ fn vertex(@builtin(vertex_index) index: u32) -> VertexOutput {
     let uv = vec2f(f32((index << 1u) & 2u), f32(index & 2u));
     var output: VertexOutput;
     output.position = vec4f(uv * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0), 0.0, 1.0);
-    output.uv = stage.region.xy + uv * stage.region.zw;
+    output.uv = stage.region_origin.xy + uv.x * stage.region_sides.xy + uv.y * stage.region_sides.zw;
     return output;
 }
 
@@ -371,5 +373,8 @@ fn fragment(input: VertexOutput) -> @location(0) vec4f {
     let encoded = encode(clamp(base_rendered(linear), vec3f(0.0), vec3f(1.0)));
     let display = tone_curved(color_graded(encoded));
     let veil = coverage(stage.overlaid, point) * stage.overlay.a;
-    return vec4f(mix(display, stage.overlay.rgb, veil), 1.0);
+    // Clamped sampling smears the edge of the source: past a texel, nothing is shown.
+    let texel = 1.0 / vec2f(textureDimensions(source));
+    let is_outside = any(input.uv < -texel) || any(input.uv > vec2f(1.0) + texel);
+    return select(vec4f(mix(display, stage.overlay.rgb, veil), 1.0), vec4f(0.0), is_outside);
 }

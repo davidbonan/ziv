@@ -15,7 +15,7 @@ use ziv::develop::domain::zone::{Zone, ZoneMask};
 use ziv::engine::infrastructure::display_stage::DisplayRequest;
 use ziv::photo::domain::working_image::WorkingImage;
 
-use crate::gpu::headless_engine;
+use crate::gpu::{headless_engine, whole_source_request};
 use crate::synthetic::{HEIGHT, WIDTH, ramp_and_patches};
 
 const TALL_WIDTH: u32 = 4;
@@ -48,8 +48,7 @@ fn full_size_pixels_are_the_developed_photo_row_for_row_across_strips() {
     let pixels = engine
         .render_pixels(
             &engine.upload(&image),
-            &brighter(),
-            [TALL_WIDTH, TALL_HEIGHT],
+            &whole_source_request(&brighter(), [TALL_WIDTH, TALL_HEIGHT]),
         )
         .unwrap();
 
@@ -82,7 +81,7 @@ fn pixels_at_the_photo_size_equal_the_display_render() {
         .read_display_pixels(&engine.render_display(&source, &request))
         .unwrap();
     let pixels = engine
-        .render_pixels(&source, &brighter(), [WIDTH, HEIGHT])
+        .render_pixels(&source, &whole_source_request(&brighter(), [WIDTH, HEIGHT]))
         .unwrap();
 
     assert_eq!(pixels, displayed);
@@ -119,10 +118,16 @@ fn pixels_of_a_photo_with_curve_color_mixer_and_color_grading_equal_the_display_
             .read_display_pixels(&engine.render_display(&source, &request))
             .unwrap();
         let pixels = engine
-            .render_pixels(&source, &curved_mixed_and_graded(), size)
+            .render_pixels(
+                &source,
+                &whole_source_request(&curved_mixed_and_graded(), size),
+            )
             .unwrap();
         let untouched = engine
-            .render_pixels(&source, &Development::default(), size)
+            .render_pixels(
+                &source,
+                &whole_source_request(&Development::default(), size),
+            )
             .unwrap();
 
         assert_eq!(pixels, displayed, "at {size:?}");
@@ -136,7 +141,10 @@ fn pixels_can_be_rendered_smaller_than_the_photo() {
     let source = engine.upload(&tall_gradient());
 
     let pixels = engine
-        .render_pixels(&source, &Development::default(), [2, TALL_HEIGHT / 2])
+        .render_pixels(
+            &source,
+            &whole_source_request(&Development::default(), [2, TALL_HEIGHT / 2]),
+        )
         .unwrap();
 
     assert_eq!((pixels.width, pixels.height), (2, TALL_HEIGHT / 2));
@@ -204,7 +212,9 @@ fn masks_stay_in_place_across_strips_and_sizes() {
             .read_display_pixels(&engine.render_display(&source, &request))
             .unwrap();
 
-        let pixels = engine.render_pixels(&source, &development, size).unwrap();
+        let pixels = engine
+            .render_pixels(&source, &whole_source_request(&development, size))
+            .unwrap();
 
         // A strip computes a place on the photo with other rounding than the whole render.
         let furthest_apart = pixels
@@ -228,7 +238,10 @@ fn masked_pixels_are_the_domain_s_at_full_size() {
     let [right, bottom] = photo_extent(size);
 
     let pixels = engine
-        .render_pixels(&engine.upload(&image), &development, size)
+        .render_pixels(
+            &engine.upload(&image),
+            &whole_source_request(&development, size),
+        )
         .unwrap();
 
     let rows = pixels.rgba.as_chunks::<{ 4 * TALL_WIDTH as usize }>().0;

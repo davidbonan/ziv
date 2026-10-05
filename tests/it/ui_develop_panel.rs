@@ -8,14 +8,15 @@ use ziv::develop::domain::color_mixer::ColorRange;
 use ziv::develop::domain::edit::Edit;
 use ziv::develop::domain::white_balance::WhiteBalance;
 use ziv::develop::ui::color_grading_section::{GRADE_SATURATION_LABEL, grading_zone_label};
+use ziv::develop::ui::crop_section::{ANGLE_LABEL, CROP_GROUP_LABEL, CropTools};
 use ziv::develop::ui::develop_panel::{
     BLACKS_LABEL, COLOR_GRADING_GROUP_LABEL, COLOR_MIXER_GROUP_LABEL, CONTRAST_LABEL, COPY_LABEL,
-    DETAIL_GROUP_LABEL, DevelopPanelState, EXPOSURE_LABEL, HIGHLIGHTS_LABEL, PASTE_LABEL,
-    PRESENCE_GROUP_LABEL, RESET_LABEL, SATURATION_LABEL, SHADOWS_LABEL, TEMPERATURE_LABEL,
-    TINT_LABEL, TONE_CURVE_GROUP_LABEL, TONE_GROUP_LABEL, VIBRANCE_LABEL,
-    WHITE_BALANCE_GROUP_LABEL, WHITES_LABEL, develop_panel,
+    CROP_TOOL_LABEL, DETAIL_GROUP_LABEL, DONE_LABEL, DevelopPanelState, EXPOSURE_LABEL,
+    HIGHLIGHTS_LABEL, PASTE_LABEL, PRESENCE_GROUP_LABEL, RESET_LABEL, SATURATION_LABEL,
+    SHADOWS_LABEL, TEMPERATURE_LABEL, TINT_LABEL, TONE_CURVE_GROUP_LABEL, TONE_GROUP_LABEL,
+    VIBRANCE_LABEL, WHITE_BALANCE_GROUP_LABEL, WHITES_LABEL, develop_panel,
 };
-use ziv::develop::ui::masks_section::MASKS_GROUP_LABEL;
+use ziv::develop::ui::masks_section::{LINEAR_GRADIENT_TOOL_LABEL, MASKS_GROUP_LABEL};
 use ziv::develop::ui::tone_curve_graph::TONE_CURVE_GRAPH_LABEL;
 use ziv::photo::domain::photo_kind::PhotoKind;
 
@@ -479,4 +480,88 @@ fn reset_returns_the_curves_the_color_mixer_and_the_color_grading_to_their_defau
     harness.run();
 
     assert_eq!(*harness.state(), DevelopPanelState::default());
+}
+
+fn cropping() -> DevelopPanelState {
+    DevelopPanelState {
+        crop: Some(CropTools::default()),
+        ..DevelopPanelState::default()
+    }
+}
+
+#[test]
+fn the_crop_tool_shows_the_crop_section_in_place_of_the_photo_sections() {
+    let mut harness = before_harness(DevelopPanelState::default());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, CROP_GROUP_LABEL)
+            .is_none()
+    );
+
+    harness
+        .get_by_role_and_label(Role::Button, CROP_TOOL_LABEL)
+        .click();
+    harness.run();
+
+    assert!(harness.state().crop.is_some());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Label, CROP_GROUP_LABEL)
+            .is_some()
+    );
+    assert!(harness.query_by_label(EXPOSURE_LABEL).is_none());
+    assert!(harness.query_by_label(MASKS_GROUP_LABEL).is_none());
+}
+
+#[test]
+fn the_mask_tools_wait_while_the_framing_is_edited() {
+    let harness = before_harness(cropping());
+
+    let tool = harness.get_by_label(LINEAR_GRADIENT_TOOL_LABEL);
+    assert!(tool.accesskit_node().is_disabled());
+}
+
+#[test]
+fn done_and_the_crop_tool_leave_the_crop_section() {
+    for leaving in [DONE_LABEL, CROP_TOOL_LABEL] {
+        let mut harness = before_harness(cropping());
+
+        harness.get_by_role_and_label(Role::Button, leaving).click();
+        harness.run();
+
+        assert!(!harness.state().crop.is_some(), "after {leaving}");
+        assert!(harness.query_by_label(EXPOSURE_LABEL).is_some());
+    }
+}
+
+#[test]
+fn reset_keeps_the_crop_section_shown() {
+    let mut harness = before_harness(DevelopPanelState {
+        edit: showing(Adjustments {
+            exposure: 1.0,
+            ..Adjustments::default()
+        })
+        .edit,
+        ..cropping()
+    });
+
+    harness.get_by_label(RESET_LABEL).click();
+    harness.run();
+
+    assert_eq!(harness.state().edit, Edit::default());
+    assert!(harness.state().crop.is_some());
+}
+
+#[test]
+fn the_angle_slider_turns_the_picture_by_tenths_of_a_degree() {
+    let mut harness = before_harness(cropping());
+
+    harness
+        .get_by_role_and_label(Role::Slider, ANGLE_LABEL)
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+
+    assert!((harness.state().edit.framing.angle - 0.1).abs() < 1e-6);
 }

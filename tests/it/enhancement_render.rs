@@ -11,7 +11,7 @@ use ziv::engine::infrastructure::source_texture::SourceTexture;
 use ziv::photo::domain::working_image::WorkingImage;
 
 use crate::golden::assert_matches_golden;
-use crate::gpu::headless_engine;
+use crate::gpu::{headless_engine, whole_source_request};
 use crate::synthetic::{HEIGHT, WIDTH, ramp_and_patches};
 
 /// What enhancing would never do, and shows: the photo upside down.
@@ -122,7 +122,10 @@ fn full_size_pixels_of_an_enhanced_photo_equal_the_display_render() {
     let development = developed_at(70.0);
 
     let pixels = engine
-        .render_pixels(&source, &development, [WIDTH, HEIGHT])
+        .render_pixels(
+            &source,
+            &whole_source_request(&development, [WIDTH, HEIGHT]),
+        )
         .unwrap();
 
     assert_eq!(pixels, rendered(&engine, &source, &development));

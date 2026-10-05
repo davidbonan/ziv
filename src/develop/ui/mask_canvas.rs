@@ -1,6 +1,7 @@
 use egui::{Color32, CursorIcon, Key, Modifiers, Pos2, Rect, Sense, Stroke, Vec2};
 
 use crate::develop::domain::brush::{Brush, BrushMask, SIZE_STEP, Stroke as BrushStroke};
+use crate::develop::domain::framing::Framing;
 use crate::develop::domain::linear_gradient::LinearGradient;
 use crate::develop::domain::mask::{Mask, MaskKind, MaskShape, PhotoPoint};
 use crate::develop::domain::polygon::{FEWEST_CORNERS, MOST_CORNERS, Polygon};
@@ -28,21 +29,65 @@ const STROKE_POINT_SPACING: f32 = 2.0;
 pub struct PhotoOnScreen {
     /// The screen area the photo is looked at through.
     pub area: Rect,
-    /// The whole photo, the part out of sight included.
-    pub whole_photo: Rect,
+    /// The top-left corner of the whole picture, out of sight or out of the frame maybe.
+    picture_origin: Pos2,
+    /// The top and the left side of the whole picture, from that corner.
+    picture_across: Vec2,
+    picture_down: Vec2,
 }
 
 impl PhotoOnScreen {
+    /// A photo shown as its picture is, `whole_picture` being where it lies.
+    pub fn upright(area: Rect, whole_picture: Rect) -> Self {
+        Self {
+            area,
+            picture_origin: whole_picture.min,
+            picture_across: Vec2::new(whole_picture.width(), 0.0),
+            picture_down: Vec2::new(0.0, whole_picture.height()),
+        }
+    }
+
+    /// A photo framed by `framing`, `framed_photo` being where the whole
+    /// framed photo lies and `picture` the size of its picture.
+    pub fn framed(
+        area: Rect,
+        framed_photo: Rect,
+        (framing, picture): (&Framing, [u32; 2]),
+    ) -> Self {
+        let [width, height] = picture.map(|side| side as f32);
+        let on_screen = |point: [f32; 2]| {
+            let share = Vec2::from(framing.share_of_framed_photo(picture, point));
+            framed_photo.min + share * framed_photo.size()
+        };
+        let picture_origin = on_screen([0.0, 0.0]);
+        Self {
+            area,
+            picture_origin,
+            picture_across: on_screen([width, 0.0]) - picture_origin,
+            picture_down: on_screen([0.0, height]) - picture_origin,
+        }
+    }
+
     fn long_edge(&self) -> f32 {
-        self.whole_photo.width().max(self.whole_photo.height())
+        self.picture_across.length().max(self.picture_down.length())
     }
 
     pub fn on_screen(&self, point: PhotoPoint) -> Pos2 {
-        self.whole_photo.min + Vec2::from(point) * self.long_edge()
+        let [across, down] = point.map(|reach| reach * self.long_edge());
+        self.picture_origin
+            + self.picture_across.normalized() * across
+            + self.picture_down.normalized() * down
     }
 
     pub fn in_photo(&self, position: Pos2) -> PhotoPoint {
-        ((position - self.whole_photo.min) / self.long_edge()).into()
+        let from_origin = position - self.picture_origin;
+        [self.picture_across, self.picture_down]
+            .map(|side| from_origin.dot(side.normalized()) / self.long_edge())
+    }
+
+    /// Where a point of the picture, in shares of its width and height, is on screen.
+    pub fn share_on_screen(&self, [across, down]: [f32; 2]) -> Pos2 {
+        self.picture_origin + self.picture_across * across + self.picture_down * down
     }
 }
 

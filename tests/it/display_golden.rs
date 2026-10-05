@@ -1,6 +1,7 @@
 use ziv::color::domain::working_space::DisplayTransform;
 use ziv::engine::infrastructure::display_readback::DisplayPixels;
 use ziv::engine::infrastructure::display_stage::{DisplayRequest, Sampling};
+use ziv::photo::domain::picture_region::PictureRegion;
 use ziv::photo::domain::working_image::WorkingImage;
 
 use crate::golden::assert_matches_golden;
@@ -84,8 +85,7 @@ fn region_render_shows_only_that_part_of_the_source() {
     let engine = headless_engine();
     let source = engine.upload(&black_then_white());
     let white_half = DisplayRequest {
-        region_min: [0.5, 0.0],
-        region_size: [0.5, 1.0],
+        region: PictureRegion::upright([0.5, 0.0], [0.5, 1.0]),
         sampling: Sampling::Pixelated,
         ..DisplayRequest::whole_source([4, 1])
     };

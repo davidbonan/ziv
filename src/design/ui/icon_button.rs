@@ -3,7 +3,7 @@ use egui::{Rect, Sense, Stroke, Vec2, WidgetInfo, WidgetType, vec2};
 use super::theme::{CONTROL_RADIUS, color};
 
 const BUTTON_SIZE: Vec2 = vec2(24.0, 24.0);
-const TOGGLE_SIZE: Vec2 = vec2(26.0, 26.0);
+const TOGGLE_SIZE: Vec2 = vec2(24.0, 24.0);
 const STROKE_WIDTH: f32 = 1.4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +13,11 @@ pub enum Icon {
     Remove,
     Add,
     Sidebar,
+    Crop,
+    RotateLeft,
+    RotateRight,
+    FlipHorizontal,
+    FlipVertical,
     LinearGradient,
     RadialGradient,
     Rectangle,
@@ -70,6 +75,48 @@ fn paint_cloud(painter: &egui::Painter, centre: egui::Pos2, stroke: Stroke) {
     let mut outline: Vec<egui::Pos2> = left.chain(top).chain(right).collect();
     outline.push(centre + vec2(-3.5, base));
     paint_outline(painter, outline, stroke);
+}
+
+// Two set squares crossing: the corners of a frame laid over a picture.
+fn paint_crop(painter: &egui::Painter, centre: egui::Pos2, stroke: Stroke) {
+    let (near, far) = (4.0, 7.0);
+    for side in [-1.0, 1.0] {
+        let corner = centre + vec2(-near, near) * side;
+        let ends = [vec2(-near, -far), vec2(far, near)].map(|end| centre + end * side);
+        painter.add(egui::Shape::line(vec![ends[0], corner, ends[1]], stroke));
+    }
+}
+
+// Three quarters of a circle ending in an arrow head, turning towards `side`.
+fn paint_quarter_turn(painter: &egui::Painter, centre: egui::Pos2, side: f32, stroke: Stroke) {
+    let radius = 5.5;
+    let mirrored =
+        |point: egui::Pos2| centre + vec2((point.x - centre.x) * side, point.y - centre.y);
+    let circle: Vec<egui::Pos2> = arc(centre, radius, [-270.0, 0.0]).map(mirrored).collect();
+    painter.add(egui::Shape::line(circle, stroke));
+    let tip = centre + vec2(radius, 0.0);
+    let head = [vec2(-3.0, -2.5), vec2(0.0, 0.0), vec2(2.5, -3.0)].map(|end| mirrored(tip + end));
+    painter.add(egui::Shape::line(head.to_vec(), stroke));
+}
+
+// Two triangles facing each other across a dashed mirror line along `mirror`.
+fn paint_flip(painter: &egui::Painter, centre: egui::Pos2, mirror: Vec2, stroke: Stroke) {
+    let away = vec2(mirror.y, mirror.x);
+    for dash in [-6.0, -1.5, 3.0] {
+        painter.line_segment(
+            [centre + mirror * dash, centre + mirror * (dash + 3.0)],
+            stroke,
+        );
+    }
+    for side in [-1.0, 1.0] {
+        let foot = centre + away * side * 2.5;
+        let triangle = vec![
+            foot - mirror * 4.5,
+            foot + mirror * 4.5,
+            foot + away * side * 4.5,
+        ];
+        paint_outline(painter, triangle, stroke);
+    }
 }
 
 fn paint_mask_tool(painter: &egui::Painter, icon: Icon, centre: egui::Pos2, stroke: Stroke) {
@@ -159,6 +206,11 @@ fn paint_icon(painter: &egui::Painter, icon: Icon, area: Rect, stroke: Stroke) {
                 stroke,
             );
         }
+        Icon::Crop => paint_crop(painter, centre, stroke),
+        Icon::RotateLeft => paint_quarter_turn(painter, centre, -1.0, stroke),
+        Icon::RotateRight => paint_quarter_turn(painter, centre, 1.0, stroke),
+        Icon::FlipHorizontal => paint_flip(painter, centre, vec2(0.0, 1.0), stroke),
+        Icon::FlipVertical => paint_flip(painter, centre, vec2(1.0, 0.0), stroke),
         tool => paint_mask_tool(painter, tool, centre, stroke),
     }
 }

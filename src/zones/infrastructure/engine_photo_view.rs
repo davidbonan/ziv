@@ -6,6 +6,7 @@ use crate::engine::infrastructure::display_stage::DisplayRequest;
 use crate::engine::infrastructure::engine::Engine;
 use crate::engine::infrastructure::source_texture::SourceTexture;
 use crate::photo::domain::photo_kind::PhotoKind;
+use crate::photo::domain::picture_region::PictureRegion;
 use crate::zones::domain::photo_view::{PhotoRegion, PhotoView};
 
 /// An uploaded photo, rendered by the engine without its edit.
@@ -22,8 +23,7 @@ impl PhotoView for EnginePhotoView {
 
     fn pixels(&self, region: &PhotoRegion, size: [u32; 2]) -> Result<Vec<u8>, String> {
         let request = DisplayRequest {
-            region_min: region.min,
-            region_size: region.size,
+            region: PictureRegion::upright(region.min, region.size),
             development: Development {
                 kind: self.kind,
                 edit: Edit::default(),

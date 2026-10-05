@@ -1,4 +1,4 @@
-use egui::{Align, Align2, Button, Layout, Rect, RichText, Stroke, StrokeKind, vec2};
+use egui::{Align, Align2, Button, Layout, Pos2, Rect, RichText, Stroke, vec2};
 
 use crate::design::ui::floating_pill::floating_pill;
 use crate::design::ui::theme::{CONTROL_RADIUS, color, medium, regular, space, type_size};
@@ -131,19 +131,28 @@ fn paint_number(painter: &egui::Painter, outline: Rect, (index, is_chosen): (usi
     );
 }
 
-/// Outlines each person on the photo with their number; `whole_photo` is
-/// where the whole photo is on screen, `area` what is seen of it.
-pub fn person_outlines(ui: &egui::Ui, (area, whole_photo): (Rect, Rect), pick: &PeoplePick) {
+/// Outlines each person on the photo with their number; `on_screen` says
+/// where a point of the picture, in shares of its width and height, is, and
+/// `area` what is seen of the photo.
+pub fn person_outlines(
+    ui: &egui::Ui,
+    area: Rect,
+    on_screen: impl Fn([f32; 2]) -> Pos2,
+    pick: &PeoplePick,
+) {
     let painter = ui.painter_at(area);
     for (index, (person, is_chosen)) in pick.persons().enumerate() {
-        let min = whole_photo.min + vec2(person.min[0], person.min[1]) * whole_photo.size();
-        let size = vec2(person.size[0], person.size[1]) * whole_photo.size();
-        let outline = Rect::from_min_size(min, size);
+        let corners: Vec<Pos2> = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+            .iter()
+            .map(|corner| {
+                on_screen([0, 1].map(|axis| person.min[axis] + corner[axis] * person.size[axis]))
+            })
+            .collect();
         let stroke = match is_chosen {
             true => Stroke::new(CHOSEN_OUTLINE_WIDTH, color::ACCENT),
             false => Stroke::new(1.0, color::TEXT_MUTED),
         };
-        painter.rect_stroke(outline, CONTROL_RADIUS, stroke, StrokeKind::Outside);
-        paint_number(&painter, outline, (index, is_chosen));
+        paint_number(&painter, Rect::from_points(&corners), (index, is_chosen));
+        painter.add(egui::Shape::closed_line(corners, stroke));
     }
 }
