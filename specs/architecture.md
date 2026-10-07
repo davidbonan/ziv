@@ -31,6 +31,7 @@ src/app.rs                       ZivApp, run()
 src/design/ui/                   theme (colors, hues, spacing, type), AdjustmentSlider (accent, hue or color track), icon button and toggle,
                                  primary button, folding section, marked choice (a selector button, marked when it holds an edit), floating pill, Notice
 src/shell/domain/                WindowMode: Cull or Develop
+src/shell/infrastructure/        native Edit menu of the menu bar (`objc2-app-kit`)
 src/shell/ui/                    top bar: sidebar button, series and photo names, mode switch, zoom readout, Before, Export…
 src/color/domain/                primaries, matrices, sRGB transfer, working space, Oklab, Illuminant
 src/photo/application/           PhotoLoader (worker thread), PhotosAhead (photos loaded before they are asked for)

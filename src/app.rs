@@ -2185,6 +2185,10 @@ pub fn run() -> eframe::Result<()> {
     eframe::run_native(
         APP_NAME,
         eframe::NativeOptions::default(),
-        Box::new(|creation| Ok(Box::new(ZivApp::new(creation)))),
+        Box::new(|creation| {
+            #[cfg(target_os = "macos")]
+            crate::shell::infrastructure::edit_menu::install_edit_menu();
+            Ok(Box::new(ZivApp::new(creation)))
+        }),
     )
 }
