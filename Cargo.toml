@@ -81,6 +81,10 @@ path = "tests/it/main.rs"
 lto = "thin"
 codegen-units = 1
 
-# Image math and egui are unusable unoptimised; ziv's own code stays debuggable.
+# Unoptimised, ziv's per-pixel loops take seconds on a 33 MP photo.
+[profile.dev]
+opt-level = 1
+
+# Image math and egui are unusable unoptimised.
 [profile.dev.package."*"]
 opt-level = 3
