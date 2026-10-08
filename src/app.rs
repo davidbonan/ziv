@@ -340,6 +340,18 @@ fn panel_frame(margin: f32) -> egui::Frame {
     egui::Frame::new().fill(color::PANEL).inner_margin(margin)
 }
 
+/// Beside the grid, the viewport stays off the grab band of its separator, or its drag takes the resize.
+fn canvas_margin(ui: &egui::Ui, is_grid_beside: bool) -> egui::Margin {
+    if !is_grid_beside {
+        return egui::Margin::ZERO;
+    }
+    let grab_band = ui.style().interaction.resize_grab_radius_side.ceil() as i8;
+    egui::Margin {
+        left: grab_band,
+        ..egui::Margin::ZERO
+    }
+}
+
 fn thumbnail_through(cache: &ThumbnailCache, photo: &Path) -> Result<Thumbnail, DecodeError> {
     cache.thumbnail_of(photo, |photo| FileDecoder.decode_thumbnail(photo))
 }
@@ -2092,7 +2104,10 @@ impl eframe::App for ZivApp {
         let mut cropped = None;
         let is_cropping = self.is_cropping();
         let crop_tools = self.crop.as_ref().map(|crop| crop.tools);
-        let canvas = egui::Frame::new().fill(color::CANVAS);
+        let is_grid_beside = self.mode == WindowMode::Cull && has_photos;
+        let canvas = egui::Frame::new()
+            .fill(color::CANVAS)
+            .inner_margin(canvas_margin(ui, is_grid_beside));
         egui::CentralPanel::default().frame(canvas).show(ui, |ui| {
             self.notice_over(ui);
             self.export_progress_over(ui);
