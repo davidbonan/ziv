@@ -8,7 +8,7 @@ pub fn headless_engine() -> Engine {
         pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
             .expect("a GPU adapter is available");
     let (device, queue) =
-        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+        pollster::block_on(adapter.request_device(&Engine::device_descriptor(&adapter)))
             .expect("the adapter provides a device");
     Engine::new(device, queue)
 }

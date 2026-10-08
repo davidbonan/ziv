@@ -152,6 +152,26 @@ fn pixels_can_be_rendered_smaller_than_the_photo() {
     assert!(top < 10 && bottom > 245, "top {top}, bottom {bottom}");
 }
 
+// A Sony A7R IV photo: wider than the 8192 texels a device allows by default.
+const WIDE_WIDTH: u32 = 9504;
+
+#[test]
+fn a_photo_wider_than_the_default_texture_limit_is_rendered() {
+    let engine = headless_engine();
+    let middle_grey = vec![[0.18; 3]; WIDE_WIDTH as usize * 2];
+    let source = engine.upload(&WorkingImage::new(WIDE_WIDTH, 2, middle_grey));
+
+    let pixels = engine
+        .render_pixels(
+            &source,
+            &whole_source_request(&Development::default(), [WIDE_WIDTH, 2]),
+        )
+        .unwrap();
+
+    let [left, right] = [0, pixels.rgba.len() - 4].map(|index| pixels.rgba[index]);
+    assert!(left > 100 && left == right, "left {left}, right {right}");
+}
+
 /// Fading in then out down the photo, across the border between two strips.
 fn detected_band() -> MaskShape {
     let [width, height] = coverage_image_size([TALL_WIDTH, TALL_HEIGHT]);

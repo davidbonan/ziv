@@ -16,6 +16,18 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// The device an engine needs from `adapter`: textures as large as it allows, a photo being one texture.
+    pub fn device_descriptor(adapter: &wgpu::Adapter) -> wgpu::DeviceDescriptor<'static> {
+        wgpu::DeviceDescriptor {
+            label: Some("ziv device"),
+            required_limits: wgpu::Limits {
+                max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
+                ..wgpu::Limits::default()
+            },
+            ..Default::default()
+        }
+    }
+
     pub fn new(device: wgpu::Device, queue: wgpu::Queue) -> Self {
         let display_stage = DisplayStage::new(&device, &queue);
         let mipmap_generator = MipmapGenerator::new(&device);

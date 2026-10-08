@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use eframe::egui_wgpu::WgpuSetup;
 use egui::{Key, KeyboardShortcut, Modifiers};
 
 use crate::design::ui::floating_pill::PILL_STACKING_STEP;
@@ -2184,7 +2185,7 @@ impl eframe::App for ZivApp {
 pub fn run() -> eframe::Result<()> {
     eframe::run_native(
         APP_NAME,
-        eframe::NativeOptions::default(),
+        options,
         Box::new(|creation| {
             #[cfg(target_os = "macos")]
             crate::shell::infrastructure::edit_menu::install_edit_menu();
@@ -2192,3 +2193,7 @@ pub fn run() -> eframe::Result<()> {
         }),
     )
 }
+    let mut options = eframe::NativeOptions::default();
+    if let WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        setup.device_descriptor = Arc::new(Engine::device_descriptor);
+    }
