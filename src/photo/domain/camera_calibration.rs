@@ -5,7 +5,7 @@ use crate::color::domain::working_space;
 /// What a RAW file says about its sensor's colors.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CameraCalibration {
-    /// CIE XYZ (D65) → camera RGB.
+    /// CIE XYZ → camera RGB, calibrated under a daylight.
     pub xyz_to_camera: Matrix3,
     /// Per-channel gains making the scene's white neutral in camera RGB.
     pub white_balance: [f32; 3],

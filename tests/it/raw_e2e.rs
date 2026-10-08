@@ -14,15 +14,22 @@ use ziv::photo::infrastructure::raw_file::{
 
 use crate::gpu::headless_engine;
 
-/// The author's own RAW, not redistributable: present only on a machine where
-/// it was linked into `tests/fixtures/local/`.
-fn local_sony_a7m4_raw() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/local/DSC07070.ARW");
+/// A RAW kept out of the repository: present only on a machine where it was
+/// put into `tests/fixtures/local/`.
+fn local_raw(name: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/local")
+        .join(name);
     if !path.exists() {
         eprintln!("skipped: {} is not on this machine", path.display());
         return None;
     }
     Some(path)
+}
+
+/// The author's own RAW, not redistributable.
+fn local_sony_a7m4_raw() -> Option<PathBuf> {
+    local_raw("DSC07070.ARW")
 }
 
 #[test]
@@ -97,6 +104,22 @@ fn untouched_raw_is_about_as_bright_as_its_camera_preview() {
 #[test]
 fn sony_a7m4_raw_tells_the_daylight_it_was_balanced_for() {
     let Some(path) = local_sony_a7m4_raw() else {
+        return;
+    };
+
+    let PhotoKind::Raw { as_shot } = decode_raw_file(&path).unwrap().kind else {
+        panic!("a RAW file decodes to a RAW photo");
+    };
+
+    assert!(
+        (4000.0..7500.0).contains(&as_shot.temperature) && as_shot.tint.abs() < 60.0,
+        "{as_shot:?}"
+    );
+}
+
+#[test]
+fn leica_q2_raw_calibrated_under_d50_and_not_d65_is_decoded_in_daylight() {
+    let Some(path) = local_raw("raws/L1000750.DNG") else {
         return;
     };
 

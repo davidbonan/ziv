@@ -31,6 +31,14 @@ const STEPS_UP_TO_CAMERA_RGB: [ProcessingStep; 5] = [
     ProcessingStep::CropDefault,
 ];
 
+// Nearest to the working white first: a camera calibrated under another daylight has no D65 matrix.
+const DAYLIGHT_CALIBRATIONS: [Illuminant; 4] = [
+    Illuminant::D65,
+    Illuminant::D75,
+    Illuminant::D55,
+    Illuminant::D50,
+];
+
 impl From<RawlerError> for DecodeError {
     fn from(error: RawlerError) -> Self {
         DecodeError::new(error.to_string())
@@ -39,8 +47,8 @@ impl From<RawlerError> for DecodeError {
 
 fn camera_calibration(raw: &RawImage) -> Result<CameraCalibration, DecodeError> {
     let (_, flat_matrix) = raw
-        .color_matrix_find_first([Illuminant::D65])
-        .ok_or_else(|| DecodeError::new("no D65 color calibration for this camera"))?;
+        .color_matrix_find_first(DAYLIGHT_CALIBRATIONS)
+        .ok_or_else(|| DecodeError::new("no daylight color calibration for this camera"))?;
     let &[xr, xg, xb, yr, yg, yb, zr, zg, zb] = flat_matrix.as_slice() else {
         return Err(DecodeError::new(
             "sensors with four colors are not supported",
