@@ -7,6 +7,7 @@ use ziv::develop::domain::color_grading::ZoneGrade;
 use ziv::develop::domain::color_mixer::ColorRange;
 use ziv::develop::domain::coverage_image::CoverageImage;
 use ziv::develop::domain::mask::{Mask, MaskShape};
+use ziv::develop::domain::preset::Preset;
 use ziv::develop::domain::tone_curve::ToneCurve;
 use ziv::develop::domain::zone::{Zone, ZoneMask};
 
@@ -64,6 +65,28 @@ fn zone_mask_is_stored_with_its_coverage() {
 
     assert_eq!(files_of(folder.path()), ["DSC07070.ARW.ziv.json"]);
     assert_eq!(SidecarFiles.stored_edit(&photo), Ok(Some(edit)));
+}
+
+#[test]
+fn applied_preset_is_stored_with_its_masks_and_its_intensity() {
+    let folder = tempfile::tempdir().unwrap();
+    let photo = photo_in(&folder);
+    let detected = [Zone::Subject, Zone::Background].map(|zone| ZoneMask {
+        zone,
+        coverage: Arc::new(CoverageImage::new([2, 1], vec![0, 255]).unwrap()),
+    });
+    let mut edit = Edit::default();
+    let id = edit.apply_preset(Preset::SubjectPop, detected.to_vec());
+    edit.set_applied_preset_intensity(id, 45.0);
+
+    SidecarFiles.store_edit(&photo, &edit).unwrap();
+
+    let stored = SidecarFiles.stored_edit(&photo).unwrap().unwrap();
+    assert_eq!(stored, edit);
+    assert_eq!(
+        stored.applied_preset_name(id).as_deref(),
+        Some("Subject pop 1")
+    );
 }
 
 #[test]

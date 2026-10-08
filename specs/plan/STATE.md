@@ -390,3 +390,36 @@ script, let it find the second, install it from the app and read What's new.
 - ◐ **M13.8 — `/release` skill.** *Spec*: rule 25. *Depends*: M13.1, M13.5.
   *Tests*: read in review.
 - ◐ **M13.9 — Demo.** *Spec*: P19. *Depends*: M13.7, M13.8. *Tests*: by hand.
+
+## ☑ M14 — AI presets · 10/10
+One-click retouches: a preset detects its zones, masks them and sets their
+adjustments, dosed by one Intensity. Feature F13. *Spec*: `specs/ai-presets.md`.
+*Demo*: on a portrait and a landscape, Whiter teeth, Bright eyes, Enhanced sky
+and Subject pop; dose one with Intensity; quit, relaunch and find them again;
+export.
+
+- ☑ **M14.1 — Enhanced sky end to end.** Preset and applied preset in the
+  edit, the Presets section with its button, detection and message, the
+  applied preset listed with its mask and selected. *Spec*:
+  `specs/ai-presets.md` rules 1–5, 7, 8, 10 · R1, R2. *Tests*: U, Eu, HV.
+- ☑ **M14.2 — Intensity.** In the edit and the engine; the panel of a selected
+  applied preset with its slider. *Spec*: rules 11–13 · R3, R4.
+  *Depends*: M14.1. *Tests*: U, G, Eu.
+- ☑ **M14.3 — Subject pop.** Two masks or none; disabled when fewer than two
+  masks are left. *Spec*: rules 2, 5, 7 · R2, R5. *Depends*: M14.1.
+  *Tests*: U, Eu.
+- ☑ **M14.4 — Bright eyes.** The eyes of every person in one mask, without a
+  picker. *Spec*: rules 5–7 · R6. *Depends*: M14.1. *Tests*: U, Eu, Eb.
+- ☑ **M14.5 — Teeth zone.** Teeth of every person as a coverage image.
+  *Spec*: rules 5–7 · R7. *Tests*: U, Eb.
+- ☑ **M14.6 — Whiter teeth.** *Spec*: rules 5–7 · R7. *Depends*: M14.4,
+  M14.5. *Tests*: U, Eu.
+- ☑ **M14.7 — Applied presets with the rest of the app.** Deleting a mask or
+  the applied preset, applying twice, sidecar version, undo and redo, Before,
+  Reset, paste, export. *Spec*: rules 9, 14–19 · R8–R10. *Depends*: M14.2,
+  M14.3. *Tests*: U, Eb, Eu.
+- ☑ **M14.8 — Demo.** *Spec*: R11. *Depends*: M14.6, M14.7. *Tests*: HV.
+- ☑ **M14.9 — More presets.** Skin glow, Lip color, Hair shine, Dramatic sky,
+  Golden sky. *Spec*: rules 5, 6 · R12. *Depends*: M14.4. *Tests*: U, HV.
+- ☑ **M14.10 — Presets by group.** Two a row under Portrait and Scene.
+  *Spec*: rule 1 · R12. *Depends*: M14.9. *Tests*: Eu, HV.

@@ -182,7 +182,9 @@ fn mask_rows(development: &Development, mask: &Mask) -> Vec<[f32; 4]> {
     let coverage = [inverted, shape.kind, feather, corners_or_layer];
     let mut rows = Vec::with_capacity(MASK_ROWS);
     rows.extend(adjustment_rows(&development.mask_factors(mask)));
-    rows.extend([coverage, shape.geometry, shape.orientation]);
+    let [cosine, sine, ..] = shape.orientation;
+    let orientation_and_effect = [cosine, sine, mask.effect_share(), 0.0];
+    rows.extend([coverage, shape.geometry, orientation_and_effect]);
     rows.extend(shape.corners);
     rows
 }

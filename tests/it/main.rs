@@ -44,6 +44,7 @@ mod ui_photo_details_lines;
 mod ui_photo_grid;
 mod ui_photo_status;
 mod ui_photo_viewport;
+mod ui_presets;
 mod ui_series_sidebar;
 mod ui_shooting_data_line;
 mod ui_tone_curve_graph;

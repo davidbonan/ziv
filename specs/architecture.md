@@ -48,8 +48,9 @@ src/develop/domain/              Edit (Adjustments + masks + tone curves + color
                                  ToneCurve (points, monotone interpolation, lookup), one per CurveChannel;
                                  ColorMixer (Hue, Saturation, Luminance per ColorRange); ColorGrading (a ZoneGrade per TonalZone, Blending, Balance);
                                  Framing (CropFrame and its handles, angle, Turn: mirror and quarter turns), NamedRatio and RatioLock, CropView (the whole picture laid out in crop mode);
-                                 Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay
-src/develop/ui/                  develop panel (tool bar, folding sections, foot), mask tool bar and masks list,
+                                 Mask and its shapes (LinearGradient, RadialGradient, Rectangle, Polygon, BrushMask, ZoneMask), BrushCoverage, CoverageImage, overlay;
+                                 Preset (the zones it masks, the adjustments it sets on each), PresetGroup, AppliedPreset (carried by the masks a preset made)
+src/develop/ui/                  develop panel (tool bar, folding sections, foot), Presets section, mask tool bar and masks list (applied presets above their masks),
                                  mask canvas (drawing and handles over the photo),
                                  crop canvas (the whole picture, its crop frame and handles, level line), Crop section (ratios, angle, turns, Reset crop), tone curve section (channel selector, graph, Reset curve),
                                  color mixer section (adjustment selector, eight sliders with color tracks),
@@ -77,8 +78,8 @@ src/models/domain/               Model (its files: address, checksum, size); por
 src/models/application/          ModelStore: download at first use, checked, kept
 src/models/infrastructure/       HTTPS downloads, models folder, ONNX Runtime runner (`ort`): CPU, or GPU for a model of fixed shape
 src/zones/domain/                the zone models, model input, mattes and their refinement on the photo's outlines,
-                                 persons and their parts, PeoplePick; port: PhotoView
-src/zones/application/           ZoneDetector: photo → zone masks, persons, person parts; DetectionRun (worker thread)
+                                 persons and their parts, the teeth of a mouth, PeoplePick; port: PhotoView
+src/zones/application/           ZoneDetector: photo → zone masks, persons, person parts, the zones of a preset; DetectionRun (worker thread)
 src/zones/ui/                    detection status and its messages, people picker and person outlines
 src/zones/infrastructure/        photo view rendered by the engine
 src/update/domain/               Version, PublishedRelease (GitHub's answer read), UpdateCheck, UpdateState, the app bundle of an executable,

@@ -13,6 +13,7 @@ use ziv::develop::domain::linear_gradient::LinearGradient;
 use ziv::develop::domain::mask::{Mask, MaskShape, PhotoPoint, photo_extent};
 use ziv::develop::domain::overlay::overlaid;
 use ziv::develop::domain::polygon::Polygon;
+use ziv::develop::domain::preset::{AppliedPreset, Preset};
 use ziv::develop::domain::radial_gradient::RadialGradient;
 use ziv::develop::domain::rectangle::Rectangle;
 use ziv::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
@@ -608,6 +609,23 @@ fn inverted_overlapping_and_hidden_masks_agree_with_the_domain() {
             masks,
             ..Edit::default()
         },
+    });
+}
+
+#[test]
+fn mask_of_an_applied_preset_at_a_partial_intensity_agrees_with_the_domain() {
+    let dosed = AppliedPreset {
+        intensity: 35.0,
+        ..AppliedPreset::of(Preset::EnhancedSky, 0)
+    };
+    let of_the_applied_preset = Mask {
+        applied_preset: Some(dosed),
+        ..slanted_gradient(two_stops_darker())
+    };
+
+    assert_shader_agrees_with_the_domain(&Development {
+        kind: RAW,
+        edit: masked(vec![of_the_applied_preset]),
     });
 }
 

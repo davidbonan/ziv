@@ -9,7 +9,8 @@ use super::edit::Edit;
 /// 4: enhancement intensity, which a reader of version 3 would drop.
 /// 5: tone curves, color mixer and color grading, which a reader of version 4 would drop.
 /// 6: framing, which a reader of version 5 would drop.
-pub const CURRENT_VERSION: u32 = 6;
+/// 7: applied presets, which a reader of version 6 would drop, and the teeth zone, which it cannot read.
+pub const CURRENT_VERSION: u32 = 7;
 
 #[derive(Serialize, Deserialize)]
 struct EditDocument {
@@ -74,6 +75,7 @@ mod tests {
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::{Mask, MaskShape};
     use crate::develop::domain::polygon::Polygon;
+    use crate::develop::domain::preset::Preset;
     use crate::develop::domain::radial_gradient::RadialGradient;
     use crate::develop::domain::rectangle::Rectangle;
     use crate::develop::domain::tone_curve::{ToneCurve, ToneCurves};
@@ -110,11 +112,11 @@ mod tests {
 
     #[test]
     fn a_document_from_a_newer_ziv_is_refused() {
-        let document = r#"{ "version": 7, "exposure": 1.5 }"#;
+        let document = r#"{ "version": 8, "exposure": 1.5 }"#;
 
         assert_eq!(
             edit_of_document(document),
-            Err(DocumentError::FromNewerZiv { version: 7 })
+            Err(DocumentError::FromNewerZiv { version: 8 })
         );
     }
 
@@ -164,7 +166,7 @@ mod tests {
             adjustments: edited().adjustments,
             is_inverted: true,
             is_hidden: true,
-            shape,
+            ..Mask::of(shape)
         });
         let edit = Edit {
             masks: masks.collect(),
@@ -179,8 +181,38 @@ mod tests {
 
         let document = edit_document(&edit);
 
-        assert!(document.contains(r#""version": 6"#));
+        assert!(document.contains(r#""version": 7"#));
         assert_eq!(edit_of_document(&document), Ok(edit));
+    }
+
+    fn detected_teeth() -> ZoneMask {
+        ZoneMask {
+            zone: Zone::Teeth,
+            coverage: Arc::new(CoverageImage::new([2, 1], vec![0, 255]).unwrap()),
+        }
+    }
+
+    #[test]
+    fn an_applied_preset_is_read_back_with_its_masks_and_its_intensity() {
+        let mut edit = Edit::default();
+        let id = edit.apply_preset(Preset::WhiterTeeth, vec![detected_teeth()]);
+        edit.set_applied_preset_intensity(id, 65.0);
+
+        let read = edit_of_document(&edit_document(&edit)).unwrap();
+
+        assert_eq!(read, edit);
+        assert_eq!(read.applied_preset(id).unwrap().intensity, 65.0);
+    }
+
+    #[test]
+    fn a_mask_written_before_presets_is_part_of_no_applied_preset() {
+        let document = r#"{ "version": 6, "masks": [
+            { "shape": { "linear_gradient": { "full": [0.1, 0.2], "none": [0.5, 0.6] } } }
+        ] }"#;
+
+        let edit = edit_of_document(document).unwrap();
+
+        assert_eq!(edit.masks[0].applied_preset, None);
     }
 
     #[test]

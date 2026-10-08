@@ -20,6 +20,7 @@ pub mod mask;
 pub mod overlay;
 pub mod polygon;
 pub mod presence;
+pub mod preset;
 pub mod radial_gradient;
 pub mod rectangle;
 pub mod tone;

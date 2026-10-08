@@ -24,7 +24,8 @@ struct Mask {
     // radial gradient: centre .xy, radii .zw
     // rectangle: centre .xy, half size .zw
     geometry: vec4f,
-    // radial gradient: cosine and sine of the rotation .xy
+    // radial gradient: cosine and sine of the rotation .xy;
+    // share of the adjustments applied at full coverage .z
     orientation: vec4f,
     // polygon: two corners a row, .xy then .zw
     corners: array<vec4f, 8>,
@@ -311,8 +312,9 @@ fn develop(working: vec3f, point: vec2f) -> vec3f {
     var colour = adjusted(working, stage.adjustments);
     let mask_count = u32(stage.photo.z);
     for (var mask_index = 0u; mask_index < mask_count; mask_index++) {
-        let locally = adjusted(colour, stage.masks[mask_index].adjustments);
-        colour = mix(colour, locally, coverage(stage.masks[mask_index], point));
+        let mask = stage.masks[mask_index];
+        let locally = adjusted(colour, mask.adjustments);
+        colour = mix(colour, locally, coverage(mask, point) * mask.orientation.z);
     }
     return color_mixed(colour);
 }

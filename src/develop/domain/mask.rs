@@ -7,6 +7,7 @@ use super::brush::BrushMask;
 use super::coverage_image::CoverageImage;
 use super::linear_gradient::{LinearGradient, NONE_HANDLE};
 use super::polygon::Polygon;
+use super::preset::AppliedPreset;
 use super::radial_gradient::{self, DEFAULT_FEATHER, RadialGradient};
 use super::rectangle::{self, Rectangle};
 use super::zone::{Zone, ZoneMask};
@@ -185,6 +186,9 @@ pub struct Mask {
     pub is_inverted: bool,
     #[serde(default)]
     pub is_hidden: bool,
+    /// The applied preset the mask is part of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_preset: Option<AppliedPreset>,
 }
 
 impl Mask {
@@ -194,11 +198,19 @@ impl Mask {
             adjustments: Adjustments::default(),
             is_inverted: false,
             is_hidden: false,
+            applied_preset: None,
         }
     }
 
     pub fn has_adjustments(&self) -> bool {
         self.adjustments != Adjustments::default()
+    }
+
+    /// The share of its adjustments the mask applies where it covers fully:
+    /// all of it, unless its applied preset is dosed.
+    pub fn effect_share(&self) -> f32 {
+        self.applied_preset
+            .map_or(1.0, |applied| applied.effect_share())
     }
 
     /// How much the mask applies at `point`: 0 not at all, 1 fully.

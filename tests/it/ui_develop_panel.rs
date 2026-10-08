@@ -367,7 +367,7 @@ fn section_folds_and_unfolds_by_its_title_and_keeps_its_values() {
 #[test]
 fn a_press_on_the_tone_curve_graph_adds_a_point_to_the_curve_of_the_photo() {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(300.0, 1100.0))
+        .with_size(egui::vec2(300.0, 1300.0))
         .build_ui_state(
             |ui, state: &mut DevelopPanelState| {
                 if is_themed(ui) {

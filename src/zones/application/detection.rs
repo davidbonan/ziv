@@ -1,3 +1,4 @@
+use crate::develop::domain::preset::Preset;
 use crate::develop::domain::zone::{DetectionTool, PersonPart, ZoneMask, ZoneTool};
 use crate::models::domain::model_runner::ModelRunner;
 use crate::models::domain::model_source::ModelSource;
@@ -15,6 +16,8 @@ pub enum DetectionAsked {
         persons: Vec<PhotoRegion>,
         parts: Vec<PersonPart>,
     },
+    /// The zones a preset retouches.
+    Preset(Preset),
 }
 
 impl From<DetectionTool> for DetectionAsked {
@@ -61,6 +64,9 @@ impl<Source: ModelSource, Runner: ModelRunner> ZoneDetector<Source, Runner> {
                 self.person_parts(photo, &asked, on_step)
                     .map(Detected::Masks)
             }
+            DetectionAsked::Preset(preset) => self
+                .preset_zone_masks(*preset, photo, on_step)
+                .map(Detected::Masks),
         }
     }
 }

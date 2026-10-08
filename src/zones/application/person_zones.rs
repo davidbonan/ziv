@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use crate::develop::domain::coverage_image::coverage_image_size;
-use crate::develop::domain::zone::{PersonPart, ZoneMask};
+use crate::develop::domain::zone::{PersonPart, Zone, ZoneMask};
 use crate::models::domain::model::Model;
 use crate::models::domain::model_runner::ModelRunner;
 use crate::models::domain::model_source::ModelSource;
@@ -16,6 +16,7 @@ use crate::zones::domain::person_parts::{
 };
 use crate::zones::domain::persons::persons_found;
 use crate::zones::domain::photo_view::{PhotoRegion, PhotoView, TexelBlock};
+use crate::zones::domain::teeth::{MOUTH_INSIDE_CLASS, teeth_coverage};
 use crate::zones::domain::zone_models::{BODY_PARTS_MODEL, FACE_PARTS_MODEL, PERSONS_MODEL};
 
 use super::zone_detector::{
@@ -38,7 +39,6 @@ pub struct PartsAsked<'a> {
 
 /// What each asked part covers so far, and what of the faces is not skin.
 struct PartCoverages {
-    size: [u32; 2],
     of_parts: Vec<(PersonPart, CoverageCanvas)>,
     not_skin: CoverageCanvas,
 }
@@ -47,7 +47,6 @@ impl PartCoverages {
     fn of(parts: &[PersonPart], size: [u32; 2]) -> Self {
         let nothing = || CoverageCanvas::covering_nothing(size);
         Self {
-            size,
             of_parts: parts.iter().map(|part| (*part, nothing())).collect(),
             not_skin: nothing(),
         }
@@ -80,18 +79,36 @@ struct ClassesSeen<'a> {
 }
 
 impl ClassesSeen<'_> {
-    // Covers `canvas` with `classes`; nothing to do when the model has none of them.
-    fn cover(&self, canvas: &mut CoverageCanvas, classes: &[usize]) -> Result<(), DetectionError> {
-        if classes.is_empty() {
-            return Ok(());
-        }
+    /// What `classes` cover of the block, one value a texel.
+    fn coverage_of(&self, classes: &[usize]) -> Result<Vec<u8>, DetectionError> {
         let shares = self.shares.share_of(classes);
         let sureness = Plane {
             values: sureness_of_shares(&shares.values, &PART_UNSURE),
             ..shares
         };
-        let refined = refined_over(self.photo, &self.block, &sureness)?;
-        canvas.cover(&self.block, &refined);
+        refined_over(self.photo, &self.block, &sureness)
+    }
+
+    // Covers `canvas` with `classes`; nothing to do when the model has none of them.
+    fn cover(&self, canvas: &mut CoverageCanvas, classes: &[usize]) -> Result<(), DetectionError> {
+        if classes.is_empty() {
+            return Ok(());
+        }
+        canvas.cover(&self.block, &self.coverage_of(classes)?);
+        Ok(())
+    }
+
+    /// Covers `canvas` with the teeth of the face the block shows.
+    fn cover_teeth(&self, canvas: &mut CoverageCanvas) -> Result<(), DetectionError> {
+        let mouth = self.coverage_of(&[MOUTH_INSIDE_CLASS])?;
+        let region = self
+            .block
+            .region(coverage_image_size(self.photo.photo_size()));
+        let rgba = self
+            .photo
+            .pixels(&region, self.block.size)
+            .map_err(DetectionError::Photo)?;
+        canvas.cover(&self.block, &teeth_coverage(&mouth, &rgba));
         Ok(())
     }
 }
@@ -140,19 +157,33 @@ impl<Source: ModelSource, Runner: ModelRunner> ZoneDetector<Source, Runner> {
         })
     }
 
+    /// The face of the person `body` shows, as the model of face parts sees
+    /// it; `None` when the person shows no face.
+    fn face_seen<'a>(
+        &self,
+        body: &ClassesSeen<'a>,
+        on_step: &mut dyn FnMut(DetectionStep),
+    ) -> Result<Option<ClassesSeen<'a>>, DetectionError> {
+        let Some(face_in_body) = body.shares.centred_extent_of(BODY_FACE_CLASS) else {
+            return Ok(None);
+        };
+        let photo = body.photo;
+        let image_size = coverage_image_size(photo.photo_size());
+        let face = body.block.region(image_size).part(&face_in_body);
+        let seen = face_surroundings(&face, photo.photo_size());
+        self.classes_seen(&FACE_PARTS_MODEL, (photo, &seen), on_step)
+            .map(Some)
+    }
+
     fn cover_face_parts(
         &self,
         body: &ClassesSeen<'_>,
         coverages: &mut PartCoverages,
         on_step: &mut dyn FnMut(DetectionStep),
     ) -> Result<(), DetectionError> {
-        let Some(face_in_body) = body.shares.extent_of(BODY_FACE_CLASS) else {
+        let Some(face) = self.face_seen(body, on_step)? else {
             return Ok(());
         };
-        let photo = body.photo;
-        let face = body.block.region(coverages.size).part(&face_in_body);
-        let seen = face_surroundings(&face, photo.photo_size());
-        let face = self.classes_seen(&FACE_PARTS_MODEL, (photo, &seen), on_step)?;
         for (part, canvas) in &mut coverages.of_parts {
             face.cover(canvas, face_classes(*part))?;
         }
@@ -183,6 +214,45 @@ impl<Source: ModelSource, Runner: ModelRunner> ZoneDetector<Source, Runner> {
     }
 }
 
+impl<Source: ModelSource, Runner: ModelRunner> ZoneDetector<Source, Runner> {
+    /// `part` on every person of the photo, as one mask; none when the photo
+    /// has no person or nobody shows that part.
+    pub(super) fn part_of_everyone(
+        &self,
+        part: PersonPart,
+        photo: &dyn PhotoView,
+        on_step: &mut dyn FnMut(DetectionStep),
+    ) -> Result<Vec<ZoneMask>, DetectionError> {
+        let persons = self.persons(photo, on_step)?;
+        let asked = PartsAsked {
+            persons: &persons,
+            parts: &[part],
+        };
+        self.person_parts(photo, &asked, on_step)
+    }
+
+    /// The teeth of every person of the photo, as one mask; none when nobody shows teeth.
+    pub fn teeth_of_everyone(
+        &self,
+        photo: &dyn PhotoView,
+        on_step: &mut dyn FnMut(DetectionStep),
+    ) -> Result<Vec<ZoneMask>, DetectionError> {
+        let mut teeth = CoverageCanvas::covering_nothing(coverage_image_size(photo.photo_size()));
+        for person in self.persons(photo, on_step)? {
+            let seen = person.grown(PERSON_MARGIN);
+            let body = self.classes_seen(&BODY_PARTS_MODEL, (photo, &seen), on_step)?;
+            if let Some(face) = self.face_seen(&body, on_step)? {
+                face.cover_teeth(&mut teeth)?;
+            }
+        }
+        let mask = teeth.into_image().map(|coverage| ZoneMask {
+            zone: Zone::Teeth,
+            coverage: Arc::new(coverage),
+        });
+        Ok(mask.into_iter().collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -190,6 +260,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::develop::domain::preset::Preset;
     use crate::develop::domain::zone::Zone;
     use crate::models::application::model_store::ModelStore;
     use crate::models::domain::model::RemoteFile;
@@ -351,6 +422,52 @@ mod tests {
             .zip(masks[1].coverage.values())
             .any(|(skin, eyes)| *skin > 200 && *eyes > 200);
         assert!(!both_cover);
+    }
+
+    #[test]
+    fn bright_eyes_masks_the_eyes_of_every_person_in_one_mask() {
+        let models = tempfile::tempdir().unwrap();
+
+        let masks = detector(&models, true)
+            .preset_zone_masks(Preset::BrightEyes, &GreyPhoto, &mut |_| {})
+            .unwrap();
+
+        let [eyes] = &masks[..] else {
+            panic!("{} masks", masks.len());
+        };
+        assert_eq!(eyes.zone, Zone::Eyes);
+        let covered_columns = |columns: std::ops::Range<u32>| {
+            let [width, height] = eyes.coverage.size();
+            let mut texels =
+                (0..height).flat_map(|row| columns.clone().map(move |x| row * width + x));
+            texels.any(|texel| eyes.coverage.values()[texel as usize] > 127)
+        };
+        let [width, _] = eyes.coverage.size();
+        assert!(covered_columns(0..width / 2), "the person on the left");
+        assert!(covered_columns(width / 2..width), "the person on the right");
+    }
+
+    #[test]
+    fn bright_eyes_on_persons_showing_no_face_masks_nothing() {
+        let models = tempfile::tempdir().unwrap();
+
+        let masks =
+            detector(&models, false).preset_zone_masks(Preset::BrightEyes, &GreyPhoto, &mut |_| {});
+
+        assert_eq!(masks, Ok(Vec::new()));
+    }
+
+    #[test]
+    fn whiter_teeth_on_persons_showing_no_face_masks_nothing() {
+        let models = tempfile::tempdir().unwrap();
+
+        let masks = detector(&models, false).preset_zone_masks(
+            Preset::WhiterTeeth,
+            &GreyPhoto,
+            &mut |_| {},
+        );
+
+        assert_eq!(masks, Ok(Vec::new()));
     }
 
     #[test]

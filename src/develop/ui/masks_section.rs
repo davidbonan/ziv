@@ -63,6 +63,8 @@ const TOOL_SEPARATOR_SIZE: egui::Vec2 = vec2(6.0, 14.0);
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MaskSelection {
     pub selected: Option<usize>,
+    /// The id of the applied preset the panel shows, instead of a mask.
+    pub applied_preset: Option<u32>,
     pub armed_tool: Option<MaskKind>,
     /// What `O` or the Overlay button last asked for; `None`: the overlay
     /// shows as long as the mask has no adjustment.
@@ -82,6 +84,13 @@ impl MaskSelection {
             selected,
             brush: self.brush,
             ..Self::default()
+        }
+    }
+
+    pub fn selecting_applied_preset(self, id: Option<u32>) -> Self {
+        Self {
+            applied_preset: id,
+            ..self.selecting(None)
         }
     }
 
@@ -123,6 +132,9 @@ pub enum MasksIntent {
     Detect(DetectionTool),
     /// Asking for the selected mask deselects it.
     Select(usize),
+    /// Asking for the selected applied preset deselects it.
+    SelectAppliedPreset(u32),
+    RemoveAppliedPreset(u32),
     ToggleVisibility(usize),
     Remove(usize),
 }
@@ -176,55 +188,82 @@ pub fn mask_tools(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksInte
     armed.or(detected)
 }
 
-struct MaskRow<'a> {
-    index: usize,
-    name: &'a str,
+/// The name a row of the list is selected by.
+struct RowName<'a> {
+    text: &'a str,
     is_selected: bool,
     is_hidden: bool,
+    /// Under the row of the applied preset it is part of.
+    is_of_applied_preset: bool,
 }
 
-fn mask_name(ui: &mut egui::Ui, row: &MaskRow<'_>, width: f32) -> egui::Response {
+fn row_name(ui: &mut egui::Ui, name: &RowName<'_>, width: f32) -> egui::Response {
     let size = vec2(width, ui.spacing().interact_size.y);
     let (area, response) = ui.allocate_exact_size(size, Sense::click());
     response.widget_info(|| {
-        WidgetInfo::selected(WidgetType::SelectableLabel, true, row.is_selected, row.name)
+        WidgetInfo::selected(
+            WidgetType::SelectableLabel,
+            true,
+            name.is_selected,
+            name.text,
+        )
     });
-    if row.is_selected || response.hovered() {
+    if name.is_selected || response.hovered() {
         ui.painter()
             .rect_filled(area, CONTROL_RADIUS, color::RAISED);
     }
-    let ink = match (row.is_selected, row.is_hidden) {
+    let ink = match (name.is_selected, name.is_hidden) {
         (true, _) => color::ACCENT,
         (false, true) => color::TEXT_DISABLED,
         (false, false) => color::TEXT,
     };
+    let indent = match name.is_of_applied_preset {
+        true => space::S + space::M,
+        false => space::S,
+    };
     ui.painter().text(
-        area.left_center() + vec2(space::S, 0.0),
+        area.left_center() + vec2(indent, 0.0),
         Align2::LEFT_CENTER,
-        row.name,
+        name.text,
         regular(type_size::BODY),
         ink,
     );
     response
 }
 
-fn mask_row(ui: &mut egui::Ui, row: &MaskRow<'_>) -> Option<MasksIntent> {
+fn mask_row(ui: &mut egui::Ui, index: usize, name: &RowName<'_>) -> Option<MasksIntent> {
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = space::XS;
-            let (eye, eye_label) = match row.is_hidden {
-                true => (Icon::Hidden, show_label(row.name)),
-                false => (Icon::Shown, hide_label(row.name)),
+            let (eye, eye_label) = match name.is_hidden {
+                true => (Icon::Hidden, show_label(name.text)),
+                false => (Icon::Shown, hide_label(name.text)),
             };
-            if icon_button(ui, Icon::Remove, &remove_label(row.name)).clicked() {
-                return Some(MasksIntent::Remove(row.index));
+            if icon_button(ui, Icon::Remove, &remove_label(name.text)).clicked() {
+                return Some(MasksIntent::Remove(index));
             }
             if icon_button(ui, eye, &eye_label).clicked() {
-                return Some(MasksIntent::ToggleVisibility(row.index));
+                return Some(MasksIntent::ToggleVisibility(index));
             }
-            mask_name(ui, row, ui.available_width())
+            row_name(ui, name, ui.available_width())
                 .clicked()
-                .then_some(MasksIntent::Select(row.index))
+                .then_some(MasksIntent::Select(index))
+        })
+        .inner
+    })
+    .inner
+}
+
+fn applied_preset_row(ui: &mut egui::Ui, id: u32, name: &RowName<'_>) -> Option<MasksIntent> {
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = space::XS;
+            if icon_button(ui, Icon::Remove, &remove_label(name.text)).clicked() {
+                return Some(MasksIntent::RemoveAppliedPreset(id));
+            }
+            row_name(ui, name, ui.available_width())
+                .clicked()
+                .then_some(MasksIntent::SelectAppliedPreset(id))
         })
         .inner
     })
@@ -251,14 +290,26 @@ pub fn masks_list(ui: &mut egui::Ui, shown: &MasksShown<'_>) -> Option<MasksInte
     }
     let mut intent = None;
     ui.spacing_mut().item_spacing.y = space::XS;
+    let mut listed_applied_preset = None;
     for (index, (mask, name)) in edit.masks.iter().zip(edit.mask_names()).enumerate() {
-        let row = MaskRow {
-            index,
-            name: &name,
+        let applied_preset = mask.applied_preset.map(|applied| applied.id);
+        if let Some(id) = applied_preset.filter(|id| listed_applied_preset != Some(*id)) {
+            let applied_name = RowName {
+                text: &edit.applied_preset_name(id).unwrap_or_default(),
+                is_selected: selection.applied_preset == Some(id),
+                is_hidden: false,
+                is_of_applied_preset: false,
+            };
+            intent = intent.or(applied_preset_row(ui, id, &applied_name));
+        }
+        listed_applied_preset = applied_preset;
+        let name = RowName {
+            text: &name,
             is_selected: selection.selected == Some(index),
             is_hidden: mask.is_hidden,
+            is_of_applied_preset: applied_preset.is_some(),
         };
-        intent = intent.or(mask_row(ui, &row));
+        intent = intent.or(mask_row(ui, index, &name));
     }
     intent
 }

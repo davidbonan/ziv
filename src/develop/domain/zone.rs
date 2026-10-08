@@ -16,6 +16,7 @@ pub enum Zone {
     Eyes,
     Lips,
     Clothes,
+    Teeth,
 }
 
 impl Zone {
@@ -29,6 +30,7 @@ impl Zone {
             Self::Eyes => "Eyes",
             Self::Lips => "Lips",
             Self::Clothes => "Clothes",
+            Self::Teeth => "Teeth",
         }
     }
 }

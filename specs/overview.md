@@ -20,6 +20,7 @@ imported series again at the next launch.
 | F10 | Culling — grid and fast preview, ratings, rejected mark, series filter, removal and Trash | [`culling.md`](culling.md) |
 | F11 | Crop and straighten — crop frame, aspect ratios, angle, quarter turns, mirror | [`crop-and-straighten.md`](crop-and-straighten.md) |
 | F12 | Distribution and update — app bundle, GitHub releases, in-app update, release notes | [`update.md`](update.md) |
+| F13 | AI presets — one-click retouches made of detected zones and their adjustments, dosed by an intensity | [`ai-presets.md`](ai-presets.md) |
 
 A feature has no spec until `/spec` writes `specs/<feature>.md`.
 

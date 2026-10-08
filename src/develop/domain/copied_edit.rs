@@ -41,9 +41,14 @@ mod tests {
     use crate::develop::domain::color_mixer::{ColorMixer, ColorRange};
     use crate::develop::domain::framing::Framing;
     use crate::develop::domain::linear_gradient::LinearGradient;
+    use std::sync::Arc;
+
+    use crate::develop::domain::coverage_image::CoverageImage;
     use crate::develop::domain::mask::{Mask, MaskShape};
+    use crate::develop::domain::preset::Preset;
     use crate::develop::domain::tone_curve::{CurveChannel, ToneCurve, ToneCurves};
     use crate::develop::domain::white_balance::WhiteBalance;
+    use crate::develop::domain::zone::{Zone, ZoneMask};
 
     const RAW: PhotoKind = PhotoKind::Raw {
         as_shot: Illuminant {
@@ -141,6 +146,23 @@ mod tests {
         let pasted = copied.pasted_onto(&relative_edit(), &PhotoKind::StandardImage);
 
         assert_eq!(pasted.masks, masked.masks);
+    }
+
+    #[test]
+    fn paste_brings_the_applied_presets_along_with_their_intensity() {
+        let sky = ZoneMask {
+            zone: Zone::Sky,
+            coverage: Arc::new(CoverageImage::new([1, 1], vec![255]).unwrap()),
+        };
+        let mut retouched = kelvin_edit();
+        let id = retouched.apply_preset(Preset::EnhancedSky, vec![sky]);
+        retouched.set_applied_preset_intensity(id, 30.0);
+        let copied = CopiedEdit::of(retouched.clone(), &RAW);
+
+        let pasted = copied.pasted_onto(&Edit::default(), &OTHER_RAW);
+
+        assert_eq!(pasted.applied_presets(), retouched.applied_presets());
+        assert_eq!(pasted.masks, retouched.masks);
     }
 
     #[test]

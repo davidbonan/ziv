@@ -7,5 +7,6 @@ pub mod crop_section;
 pub mod develop_panel;
 pub mod mask_canvas;
 pub mod masks_section;
+pub mod presets_section;
 pub mod tone_curve_graph;
 pub mod tone_curve_section;

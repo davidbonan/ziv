@@ -164,6 +164,28 @@ impl<Source: ModelSource, Runner: ModelRunner> ZoneDetector<Source, Runner> {
         })
     }
 
+    /// The subject and what it leaves, from one detection; no mask when the
+    /// photo has no subject, or nothing but its subject.
+    pub(super) fn subject_and_background(
+        &self,
+        photo: &dyn PhotoView,
+        on_step: &mut dyn FnMut(DetectionStep),
+    ) -> Result<Vec<ZoneMask>, DetectionError> {
+        let subject = self.subject(photo, on_step)?;
+        let background = subject.inverted();
+        if !subject.covers_something() || !background.covers_something() {
+            return Ok(Vec::new());
+        }
+        let masks = [(Zone::Subject, subject), (Zone::Background, background)];
+        Ok(masks
+            .into_iter()
+            .map(|(zone, coverage)| ZoneMask {
+                zone,
+                coverage: Arc::new(coverage),
+            })
+            .collect())
+    }
+
     /// The masks `tool` finds in the photo; none when what it looks for is
     /// not in the photo.
     pub fn zone_masks(
@@ -228,6 +250,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::develop::domain::preset::Preset;
     use crate::models::domain::model::RemoteFile;
 
     const PHOTO_SIZE: [u32; 2] = [4096, 1024];
@@ -359,6 +382,36 @@ mod tests {
 
             assert_eq!(masks, Ok(Vec::new()));
         }
+    }
+
+    #[test]
+    fn subject_pop_masks_the_subject_and_what_it_leaves_from_one_detection() {
+        let models = folder_holding(&SUBJECT_MODEL);
+        let detector = detector_running(&models, LeftHalfIsSubject);
+        let mut steps = Vec::new();
+
+        let masks = detector
+            .preset_zone_masks(Preset::SubjectPop, &GreyPhoto, &mut |step| steps.push(step))
+            .unwrap();
+
+        let zones: Vec<Zone> = masks.iter().map(|mask| mask.zone).collect();
+        assert_eq!(zones, [Zone::Subject, Zone::Background]);
+        let on_the_left: Vec<f32> = masks
+            .iter()
+            .map(|mask| mask.coverage.coverage_at_share([0.25, 0.5]))
+            .collect();
+        assert_eq!(on_the_left, [1.0, 0.0]);
+        assert_eq!(steps, [DetectionStep::Detecting]);
+    }
+
+    #[test]
+    fn subject_pop_on_a_photo_without_subject_masks_nothing() {
+        let models = folder_holding(&SUBJECT_MODEL);
+        let detector = detector_running(&models, NothingIsSubject);
+
+        let masks = detector.preset_zone_masks(Preset::SubjectPop, &GreyPhoto, &mut |_| {});
+
+        assert_eq!(masks, Ok(Vec::new()));
     }
 
     #[test]

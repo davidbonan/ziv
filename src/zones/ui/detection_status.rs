@@ -2,6 +2,7 @@ use egui::RichText;
 
 use crate::design::ui::floating_pill::floating_pill;
 use crate::design::ui::theme::color;
+use crate::develop::domain::preset::Preset;
 use crate::develop::domain::zone::{PersonPart, ZoneTool};
 use crate::models::ui::download_label::download_label;
 use crate::zones::application::detection::DetectionAsked;
@@ -14,9 +15,19 @@ pub fn detection_label(asked: &DetectionAsked, step: Option<DetectionStep>) -> S
         return download_label(model, received);
     }
     let detecting = match asked {
-        DetectionAsked::Zone(ZoneTool::Subject) => "Detecting the subject…",
+        DetectionAsked::Zone(ZoneTool::Subject) | DetectionAsked::Preset(Preset::SubjectPop) => {
+            "Detecting the subject…"
+        }
         DetectionAsked::Zone(ZoneTool::Background) => "Detecting the background…",
-        DetectionAsked::Zone(ZoneTool::Sky) => "Detecting the sky…",
+        DetectionAsked::Zone(ZoneTool::Sky)
+        | DetectionAsked::Preset(Preset::EnhancedSky | Preset::DramaticSky | Preset::GoldenSky) => {
+            "Detecting the sky…"
+        }
+        DetectionAsked::Preset(Preset::BrightEyes) => "Detecting the eyes…",
+        DetectionAsked::Preset(Preset::SkinGlow) => "Detecting the skin…",
+        DetectionAsked::Preset(Preset::LipColor) => "Detecting the lips…",
+        DetectionAsked::Preset(Preset::HairShine) => "Detecting the hair…",
+        DetectionAsked::Preset(Preset::WhiterTeeth) => "Detecting the teeth…",
         DetectionAsked::Persons => "Looking for people…",
         DetectionAsked::PersonParts { .. } => "Masking the chosen parts…",
     };
@@ -26,10 +37,17 @@ pub fn detection_label(asked: &DetectionAsked, step: Option<DetectionStep>) -> S
 /// What to tell the user when nothing of what was `asked` is in the photo.
 pub fn nothing_found_label(asked: &DetectionAsked) -> String {
     match asked {
-        DetectionAsked::Zone(ZoneTool::Subject | ZoneTool::Background) => {
-            "No subject found in this photo".to_owned()
+        DetectionAsked::Zone(ZoneTool::Subject | ZoneTool::Background)
+        | DetectionAsked::Preset(Preset::SubjectPop) => "No subject found in this photo".to_owned(),
+        DetectionAsked::Zone(ZoneTool::Sky)
+        | DetectionAsked::Preset(Preset::EnhancedSky | Preset::DramaticSky | Preset::GoldenSky) => {
+            "No sky found in this photo".to_owned()
         }
-        DetectionAsked::Zone(ZoneTool::Sky) => "No sky found in this photo".to_owned(),
+        DetectionAsked::Preset(Preset::BrightEyes) => "No eyes found in this photo".to_owned(),
+        DetectionAsked::Preset(Preset::SkinGlow) => "No skin found in this photo".to_owned(),
+        DetectionAsked::Preset(Preset::LipColor) => "No lips found in this photo".to_owned(),
+        DetectionAsked::Preset(Preset::HairShine) => "No hair found in this photo".to_owned(),
+        DetectionAsked::Preset(Preset::WhiterTeeth) => "No teeth found in this photo".to_owned(),
         DetectionAsked::Persons => "No person found in this photo".to_owned(),
         DetectionAsked::PersonParts { parts, .. } => parts_not_found_label(parts),
     }
@@ -83,6 +101,17 @@ mod tests {
         assert_eq!(
             detection_label(&DetectionAsked::Persons, None),
             "Looking for people…"
+        );
+    }
+
+    #[test]
+    fn preset_says_which_zone_it_looks_for_and_which_it_did_not_find() {
+        let whiter_teeth = DetectionAsked::Preset(Preset::WhiterTeeth);
+
+        assert_eq!(detection_label(&whiter_teeth, None), "Detecting the teeth…");
+        assert_eq!(
+            nothing_found_label(&whiter_teeth),
+            "No teeth found in this photo"
         );
     }
 

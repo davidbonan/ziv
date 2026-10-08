@@ -8,8 +8,9 @@ use crate::design::ui::section::{SectionTitle, section};
 use crate::design::ui::theme::{color, hue, medium, regular, space, type_size};
 use crate::develop::domain::adjustments::{ADJUSTMENT_RANGE, Adjustments, EXPOSURE_RANGE};
 use crate::develop::domain::brush::{Brush, FLOW_RANGE, SIZE_RANGE};
-use crate::develop::domain::edit::Edit;
-use crate::develop::domain::mask::MaskKind;
+use crate::develop::domain::edit::{Edit, FULL_INTENSITY, INTENSITY_RANGE};
+use crate::develop::domain::mask::{Mask, MaskKind};
+use crate::develop::domain::preset::{AppliedPreset, Preset};
 use crate::develop::domain::radial_gradient::FEATHER_RANGE;
 use crate::develop::domain::white_balance::{
     KELVIN_RANGE, KELVIN_TINT_RANGE, RELATIVE_RANGE, WhiteBalance,
@@ -26,6 +27,7 @@ use super::masks_section::{
     MASKS_GROUP_LABEL, MaskSelection, MasksIntent, MasksShown, TOOL_SPACING, mask_tools,
     masks_list, tool_separator,
 };
+use super::presets_section::{PRESETS_GROUP_LABEL, PresetsShown, presets_section};
 use super::tone_curve_section::tone_curve_section;
 
 pub const TEMPERATURE_LABEL: &str = "Temp";
@@ -53,6 +55,7 @@ pub const OVERLAY_LABEL: &str = "Overlay";
 pub const FEATHER_LABEL: &str = "Feather";
 pub const BRUSH_SIZE_LABEL: &str = "Size";
 pub const BRUSH_FLOW_LABEL: &str = "Flow";
+pub const PRESET_INTENSITY_LABEL: &str = "Intensity";
 
 const OVERLAY_KEY: Key = Key::O;
 pub const WHITE_BALANCE_GROUP_LABEL: &str = "White balance";
@@ -93,6 +96,10 @@ const BRUSH_SIZE: AdjustmentSlider = AdjustmentSlider {
 const BRUSH_FLOW: AdjustmentSlider = AdjustmentSlider {
     default: 100.0,
     ..whole_number_adjustment(BRUSH_FLOW_LABEL, FLOW_RANGE)
+};
+const PRESET_INTENSITY: AdjustmentSlider = AdjustmentSlider {
+    default: FULL_INTENSITY,
+    ..whole_number_adjustment(PRESET_INTENSITY_LABEL, INTENSITY_RANGE)
 };
 const CONTRAST: AdjustmentSlider = whole_number_adjustment(CONTRAST_LABEL, ADJUSTMENT_RANGE);
 const HIGHLIGHTS: AdjustmentSlider = whole_number_adjustment(HIGHLIGHTS_LABEL, ADJUSTMENT_RANGE);
@@ -177,6 +184,8 @@ pub struct DevelopPanelState {
     pub is_detecting: bool,
     /// The zone tool the user asked for this frame.
     pub asked_detection: Option<DetectionTool>,
+    /// The preset the user asked for this frame.
+    pub asked_preset: Option<Preset>,
     /// The photo has an enhancement: its Intensity can be dosed.
     pub is_enhanced: bool,
     /// An enhancement runs: Enhance waits for it.
@@ -206,6 +215,12 @@ impl DevelopPanelState {
             .filter(|index| *index < self.edit.masks.len())
     }
 
+    /// The applied preset the panel shows.
+    fn selected_applied_preset(&self) -> Option<AppliedPreset> {
+        self.edit
+            .applied_preset(self.mask_selection.applied_preset?)
+    }
+
     fn selecting(self, selected: Option<usize>) -> Self {
         Self {
             mask_selection: self.mask_selection.selecting(selected),
@@ -223,6 +238,31 @@ impl DevelopPanelState {
         self.selecting(selected)
     }
 
+    /// The masks of the applied preset of `id` removed; the selected mask stays selected.
+    fn without_applied_preset(mut self, id: u32) -> Self {
+        let is_of_it = |mask: &Mask| mask.applied_preset.is_some_and(|applied| applied.id == id);
+        let selected = self.selected_mask().and_then(|selected| {
+            let removed_before = self.edit.masks[..selected]
+                .iter()
+                .filter(|mask| is_of_it(mask));
+            (!is_of_it(&self.edit.masks[selected])).then(|| selected - removed_before.count())
+        });
+        let other_applied_preset = self
+            .mask_selection
+            .applied_preset
+            .filter(|kept| *kept != id);
+        self.edit.remove_applied_preset(id);
+        match selected {
+            Some(_) => self.selecting(selected),
+            None => Self {
+                mask_selection: self
+                    .mask_selection
+                    .selecting_applied_preset(other_applied_preset),
+                ..self
+            },
+        }
+    }
+
     fn after(mut self, intent: MasksIntent) -> Self {
         match intent {
             MasksIntent::Arm(tool) => {
@@ -238,6 +278,16 @@ impl DevelopPanelState {
                 let is_selected = self.selected_mask() == Some(index);
                 self.selecting((!is_selected).then_some(index))
             }
+            MasksIntent::SelectAppliedPreset(id) => {
+                let is_selected = self.mask_selection.applied_preset == Some(id);
+                let selection = self.mask_selection;
+                Self {
+                    mask_selection: selection
+                        .selecting_applied_preset((!is_selected).then_some(id)),
+                    ..self
+                }
+            }
+            MasksIntent::RemoveAppliedPreset(id) => self.without_applied_preset(id),
             MasksIntent::ToggleVisibility(index) => {
                 self.edit.masks[index].is_hidden = !self.edit.masks[index].is_hidden;
                 self
@@ -412,6 +462,28 @@ fn mask_adjusted(
     }
 }
 
+/// The name and the Intensity of the selected applied preset instead of the photo's sliders.
+fn applied_preset_dosed(
+    ui: &mut egui::Ui,
+    state: DevelopPanelState,
+    applied: AppliedPreset,
+) -> DevelopPanelState {
+    let mut state = state;
+    let name = state
+        .edit
+        .applied_preset_name(applied.id)
+        .unwrap_or_default();
+    let is_done = title_with_done(ui, &name);
+    let intensity = PRESET_INTENSITY.show(ui, applied.intensity);
+    state
+        .edit
+        .set_applied_preset_intensity(applied.id, intensity);
+    match is_done {
+        true => state.selecting(None),
+        false => state,
+    }
+}
+
 /// The sliders of the photo itself, its tone curve, then its Detail section.
 fn photo_adjusted(
     ui: &mut egui::Ui,
@@ -458,6 +530,17 @@ fn masks_and_adjustments(
     kind: &PhotoKind,
     state: DevelopPanelState,
 ) -> DevelopPanelState {
+    let shown = PresetsShown {
+        edit: &state.edit,
+        is_detecting: state.is_detecting,
+    };
+    let asked_preset = section(ui, &SectionTitle::of(PRESETS_GROUP_LABEL), |ui| {
+        presets_section(ui, &shown)
+    });
+    let state = DevelopPanelState {
+        asked_preset: asked_preset.flatten(),
+        ..state
+    };
     let title = SectionTitle {
         text: MASKS_GROUP_LABEL,
         count: Some(state.edit.masks.len()),
@@ -467,6 +550,9 @@ fn masks_and_adjustments(
         Some(intent) => state.after(intent),
         None => state,
     };
+    if let Some(applied) = state.selected_applied_preset() {
+        return applied_preset_dosed(ui, state, applied);
+    }
     match state.selected_mask() {
         Some(selected) => mask_adjusted(ui, state, selected),
         None => photo_adjusted(ui, kind, state),
@@ -517,22 +603,31 @@ fn tool_bar(ui: &mut egui::Ui, state: DevelopPanelState) -> DevelopPanelState {
     .inner
 }
 
-/// `Esc` leaves the armed tool or the selected mask, `Delete` removes the
-/// selected mask, `O` shows or hides its overlay. A typed value keeps its keys.
+/// `Esc` leaves the armed tool, the selected mask or applied preset, `Delete` removes the
+/// selected mask or applied preset, `O` shows or hides its overlay. A typed value keeps its keys.
 fn after_mask_keys(ui: &egui::Ui, state: DevelopPanelState) -> DevelopPanelState {
     if ui.ctx().text_edit_focused() {
         return state;
     }
     let is_pressed = |key| ui.input_mut(|input| input.consume_key(Modifiers::NONE, key));
     let selection = state.mask_selection;
-    let is_working_on_masks = selection.selected.is_some() || selection.armed_tool.is_some();
+    let is_working_on_masks = selection.selected.is_some()
+        || selection.applied_preset.is_some()
+        || selection.armed_tool.is_some();
     if is_working_on_masks && is_pressed(Key::Escape) {
         return state.selecting(None);
+    }
+    let is_removal_asked = || is_pressed(Key::Delete) || is_pressed(Key::Backspace);
+    if let Some(applied) = state.selected_applied_preset() {
+        return match is_removal_asked() {
+            true => state.without_applied_preset(applied.id),
+            false => state,
+        };
     }
     let Some(selected) = state.selected_mask() else {
         return state;
     };
-    if is_pressed(Key::Delete) || is_pressed(Key::Backspace) {
+    if is_removal_asked() {
         return state.without_mask(selected);
     }
     if is_pressed(OVERLAY_KEY) {

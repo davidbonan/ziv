@@ -86,11 +86,11 @@ impl Development {
 
     /// The edited value of the working-space pixel at `point`, base rendering
     /// not applied yet. Each visible mask blends its adjustments by its
-    /// coverage; the color mixer then acts on the photo with its masks.
+    /// coverage and the share of its effect that is kept; the color mixer then acts on the photo with its masks.
     pub fn edited(&self, working: [f32; 3], point: PhotoPoint) -> [f32; 3] {
         let globally = self.photo_factors().applied(working);
         let masked = self.edit.visible_masks().fold(globally, |colour, mask| {
-            let coverage = mask.coverage(point);
+            let coverage = mask.coverage(point) * mask.effect_share();
             let locally = self.mask_factors(mask).applied(colour);
             [0, 1, 2]
                 .map(|channel| colour[channel] + (locally[channel] - colour[channel]) * coverage)
@@ -119,6 +119,7 @@ mod tests {
     use crate::develop::domain::color_mixer::ColorRange;
     use crate::develop::domain::linear_gradient::LinearGradient;
     use crate::develop::domain::mask::MaskShape;
+    use crate::develop::domain::preset::{AppliedPreset, Preset};
     use crate::develop::domain::tone_curve::ToneCurve;
     use crate::develop::domain::white_balance::WhiteBalance;
 
@@ -162,6 +163,30 @@ mod tests {
             masks,
             ..Edit::default()
         }
+    }
+
+    fn of_an_applied_preset_at(intensity: f32) -> Mask {
+        let applied = AppliedPreset {
+            intensity,
+            ..AppliedPreset::of(Preset::EnhancedSky, 0)
+        };
+        Mask {
+            applied_preset: Some(applied),
+            ..one_stop_brighter(COVERING)
+        }
+    }
+
+    #[test]
+    fn intensity_of_an_applied_preset_scales_the_effect_of_its_mask() {
+        let untouched = edited(Edit::default());
+        let in_full = edited(masked(vec![one_stop_brighter(COVERING)]));
+        let halfway = [0, 1, 2].map(|channel| (untouched[channel] + in_full[channel]) / 2.0);
+
+        let at = |intensity| edited(masked(vec![of_an_applied_preset_at(intensity)]));
+
+        assert_close(at(100.0), in_full);
+        assert_close(at(50.0), halfway);
+        assert_close(at(0.0), untouched);
     }
 
     fn assert_close(actual: [f32; 3], expected: [f32; 3]) {

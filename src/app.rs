@@ -14,6 +14,7 @@ use crate::develop::domain::development::Development;
 use crate::develop::domain::edit::{Edit, FULL_INTENSITY};
 use crate::develop::domain::framing::Framing;
 use crate::develop::domain::mask::{Mask, MaskShape};
+use crate::develop::domain::preset::Preset;
 use crate::develop::domain::zone::ZoneMask;
 use crate::develop::infrastructure::sidecar_files::{SidecarFiles, has_sidecar, sidecar_path};
 use crate::develop::ui::before_badge::before_badge;
@@ -1461,13 +1462,16 @@ impl ZivApp {
             Ok(Detected::Persons(persons)) if !persons.is_empty() => {
                 self.people_pick = Some(PeoplePick::among(persons));
             }
-            Ok(Detected::Masks(masks)) if !masks.is_empty() => {
-                let missing = asked.parts_missing_from(&masks);
-                self.add_detected_masks(masks);
-                if !missing.is_empty() {
-                    self.show_notice(parts_not_found_label(&missing));
+            Ok(Detected::Masks(masks)) if !masks.is_empty() => match asked {
+                DetectionAsked::Preset(preset) => self.apply_preset(preset, masks),
+                _ => {
+                    let missing = asked.parts_missing_from(&masks);
+                    self.add_detected_masks(masks);
+                    if !missing.is_empty() {
+                        self.show_notice(parts_not_found_label(&missing));
+                    }
                 }
-            }
+            },
             Ok(_) => self.show_notice(nothing_found_label(&asked)),
             Err(error) => self.show_notice(detection_failure_notice(&error)),
         }
@@ -1485,6 +1489,18 @@ impl ZivApp {
         self.mask_selection = self
             .mask_selection
             .selecting(edit.masks.len().checked_sub(1));
+        self.set_selected_edit(edit);
+    }
+
+    /// `detected` masked as `preset` retouches them, the applied preset selected.
+    fn apply_preset(&mut self, preset: Preset, detected: Vec<ZoneMask>) {
+        let mut edit = self.selected_edit();
+        if !edit.has_room_for(preset) {
+            return;
+        }
+        let id = edit.apply_preset(preset, detected);
+        self.is_before_shown = false;
+        self.mask_selection = self.mask_selection.selecting_applied_preset(Some(id));
         self.set_selected_edit(edit);
     }
 
@@ -1753,6 +1769,7 @@ impl ZivApp {
                     ratio_asked: None,
                     is_detecting: self.zone_detection.is_some() || self.people_pick.is_some(),
                     asked_detection: None,
+                    asked_preset: None,
                     is_enhanced: self.is_viewed_photo_enhanced(),
                     is_enhancing: self.enhancement.is_some(),
                     is_enhancement_asked: false,
@@ -1784,6 +1801,9 @@ impl ZivApp {
         }
         if let Some(tool) = left.asked_detection {
             self.start_detection(tool.into());
+        }
+        if let Some(preset) = left.asked_preset {
+            self.start_detection(DetectionAsked::Preset(preset));
         }
         if left.is_enhancement_asked {
             self.start_enhancement();
@@ -2183,6 +2203,10 @@ impl eframe::App for ZivApp {
 }
 
 pub fn run() -> eframe::Result<()> {
+    let mut options = eframe::NativeOptions::default();
+    if let WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        setup.device_descriptor = Arc::new(Engine::device_descriptor);
+    }
     eframe::run_native(
         APP_NAME,
         options,
@@ -2193,7 +2217,3 @@ pub fn run() -> eframe::Result<()> {
         }),
     )
 }
-    let mut options = eframe::NativeOptions::default();
-    if let WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
-        setup.device_descriptor = Arc::new(Engine::device_descriptor);
-    }

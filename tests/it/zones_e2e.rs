@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use ziv::develop::domain::coverage_image::CoverageImage;
-use ziv::develop::domain::zone::{PersonPart, ZoneMask, ZoneTool};
+use ziv::develop::domain::preset::Preset;
+use ziv::develop::domain::zone::{PersonPart, Zone, ZoneMask, ZoneTool};
 use ziv::models::application::model_store::ModelStore;
 use ziv::models::domain::model::Model;
 use ziv::models::infrastructure::model_downloads::ModelDownloads;
@@ -193,6 +194,56 @@ fn parts_of_four_persons_sitting_together() {
     }
 }
 
+/// What `preset` masks in `photo`, and nothing where the models or the photo are absent.
+fn preset_masks(preset: Preset, photo: &str) -> Option<Vec<ZoneMask>> {
+    let models = [PERSONS_MODEL, BODY_PARTS_MODEL, FACE_PARTS_MODEL];
+    let (Some(photo), Some(detector)) = (local_photo(photo), local_detector(&models)) else {
+        return None;
+    };
+    let masks = detector.preset_zone_masks(preset, &viewed(&photo), &mut |_| {});
+    Some(masks.unwrap())
+}
+
+/// Whether `mask` covers something in the columns between two shares of the photo's width.
+fn covers_between(mask: &ZoneMask, from: f32, to: f32) -> bool {
+    let [width, height] = mask.coverage.size();
+    let columns = (from * width as f32) as u32..(to * width as f32) as u32;
+    (0..height)
+        .flat_map(|row| columns.clone().map(move |column| row * width + column))
+        .any(|texel| mask.coverage.values()[texel as usize] > 127)
+}
+
+#[test]
+fn bright_eyes_of_a_wedding_group_is_one_mask_covering_eyes_from_end_to_end() {
+    let ten_persons_in_a_row = "raws-people/Matrimonio.CR3";
+    let Some(masks) = preset_masks(Preset::BrightEyes, ten_persons_in_a_row) else {
+        return;
+    };
+
+    let [eyes] = &masks[..] else {
+        panic!("{} masks", masks.len());
+    };
+    assert_eq!(eyes.zone, Zone::Eyes);
+    assert!(covers_between(eyes, 0.15, 0.25), "the man at the left end");
+    assert!(covers_between(eyes, 0.45, 0.52), "the bride");
+    assert!(covers_between(eyes, 0.8, 0.9), "the man at the right end");
+    assert!(!covers_between(eyes, 0.0, 0.1), "the wall");
+}
+
+#[test]
+fn bright_eyes_of_a_portrait_covers_its_eyes() {
+    let Some(masks) = preset_masks(Preset::BrightEyes, "portrait.jpg") else {
+        return;
+    };
+
+    let between_the_eyes = [0.468, 0.304];
+    assert!(
+        is_near(middle_of(&masks[0]), between_the_eyes),
+        "{:?}",
+        middle_of(&masks[0])
+    );
+}
+
 fn is_near(place: [f32; 2], expected: [f32; 2]) -> bool {
     (place[0] - expected[0]).abs() < 0.02 && (place[1] - expected[1]).abs() < 0.02
 }
@@ -218,4 +269,54 @@ fn parts_of_a_portrait() {
     assert!(covered(skin, the_forehead) > 0.9 && covered(skin, the_mouth) < 0.2);
     assert!(covered(hair, [0.6, 0.45]) > 0.5 && covered(hair, the_forehead) < 0.1);
     assert!(covered(clothes, [0.47, 0.6]) > 0.9 && covered(clothes, the_forehead) < 0.1);
+}
+
+/// The teeth of everyone in `photo`, and nothing where the models or the photo are absent.
+fn teeth_of_everyone(photo: &str) -> Option<Vec<ZoneMask>> {
+    let models = [PERSONS_MODEL, BODY_PARTS_MODEL, FACE_PARTS_MODEL];
+    let (Some(photo), Some(detector)) = (local_photo(photo), local_detector(&models)) else {
+        return None;
+    };
+    let masks = detector.teeth_of_everyone(&viewed(&photo), &mut |_| {});
+    Some(masks.unwrap())
+}
+
+#[test]
+fn teeth_of_a_smiling_portrait_are_covered_and_its_lips_and_skin_are_left() {
+    let Some(masks) = teeth_of_everyone("portrait.jpg") else {
+        return;
+    };
+    let (a_front_tooth, the_lower_lip, a_cheek) = ([0.452, 0.369], [0.457, 0.388], [0.40, 0.36]);
+
+    let [teeth] = &masks[..] else {
+        panic!("{} masks", masks.len());
+    };
+    assert_eq!(teeth.zone, Zone::Teeth);
+    assert!(covered(teeth, a_front_tooth) > 0.8, "a front tooth");
+    assert!(covered(teeth, the_lower_lip) < 0.2, "the lower lip");
+    assert!(covered(teeth, a_cheek) < 0.05, "a cheek");
+}
+
+#[test]
+fn whiter_teeth_masks_the_teeth_of_a_smiling_portrait() {
+    let Some(masks) = preset_masks(Preset::WhiterTeeth, "portrait.jpg") else {
+        return;
+    };
+
+    let the_mouth = [0.462, 0.375];
+    assert_eq!(masks[0].zone, Zone::Teeth);
+    assert!(
+        is_near(middle_of(&masks[0]), the_mouth),
+        "{:?}",
+        middle_of(&masks[0])
+    );
+}
+
+#[test]
+fn closed_mouth_shows_no_teeth() {
+    let Some(masks) = teeth_of_everyone("raws-people/20200927_19.30.38_DSC_2839.nef") else {
+        return;
+    };
+
+    assert_eq!(masks, Vec::new());
 }
